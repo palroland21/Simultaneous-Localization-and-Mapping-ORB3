@@ -523,6 +523,9 @@ void System::Shutdown()
 
     mpLocalMapper->RequestFinish();
     mpLoopCloser->RequestFinish();
+    // The final trajectory and evaluation must use completed optimizations.
+    while(!mpLocalMapper->isFinished() || !mpLoopCloser->isFinished() || mpLoopCloser->isRunningGBA())
+        usleep(5000);
     /*if(mpViewer)
     {
         mpViewer->RequestFinish();
@@ -1322,6 +1325,67 @@ int System::GetTrackingState()
 {
     unique_lock<mutex> lock(mMutexState);
     return mTrackingState;
+}
+
+bool System::GetCurrentBodyPose(Sophus::SE3f &Twb, unsigned long &mapId,
+                                unsigned long &originId, bool &imuInitialized)
+{
+    unique_lock<mutex> stateLock(mMutexState);
+    Map* map = mpAtlas->GetCurrentMap();
+    unique_lock<mutex> mapLock(map->mMutexMapUpdate);
+    mapId = map->GetId();
+    originId = map->GetInitKFid();
+    imuInitialized = map->isImuInitialized();
+    if ((mSensor != IMU_STEREO && mSensor != IMU_MONOCULAR && mSensor != IMU_RGBD) ||
+        (mTrackingState != Tracking::OK && mTrackingState != Tracking::OK_KLT))
+        return false;
+    Twb = mpTracker->mCurrentFrame.GetImuPose();
+    return Twb.matrix().allFinite();
+}
+
+std::vector<std::pair<double, Eigen::Vector3d>> System::GetOptimizedBodyTrajectory(bool largestMap)
+{
+    std::vector<std::pair<double, Eigen::Vector3d>> trajectory;
+    if (mSensor != IMU_STEREO && mSensor != IMU_MONOCULAR && mSensor != IMU_RGBD)
+        return trajectory;
+    Map* map = mpAtlas->GetCurrentMap();
+    if (largestMap)
+    {
+        map = nullptr;
+        for (Map* candidate : mpAtlas->GetAllMaps())
+            if (!map || candidate->KeyFramesInMap() > map->KeyFramesInMap()) map = candidate;
+    }
+    if (!map) return trajectory;
+
+    // BA/loop closure must not change keyframe poses halfway through a snapshot.
+    unique_lock<mutex> mapLock(map->mMutexMapUpdate);
+    const vector<KeyFrame*> keyframes = map->GetAllKeyFrames();
+    if (keyframes.empty()) return trajectory;
+    KeyFrame* origin = *std::min_element(keyframes.begin(), keyframes.end(), KeyFrame::lId);
+    const Sophus::SE3f worldOrigin = origin->GetImuPose();
+    auto reference = mpTracker->mlpReferences.begin();
+    auto time = mpTracker->mlFrameTimes.begin();
+    auto lost = mpTracker->mlbLost.begin();
+    trajectory.reserve(mpTracker->mlRelativeFramePoses.size());
+    for (const Sophus::SE3f& relative : mpTracker->mlRelativeFramePoses)
+    {
+        KeyFrame* keyframe = *reference++;
+        const double timestamp = *time++;
+        const bool trackingLost = *lost++;
+        if (trackingLost || !keyframe) continue;
+        Sophus::SE3f parentTransform;
+        while (keyframe && keyframe->isBad())
+        {
+            parentTransform = parentTransform * keyframe->mTcp;
+            keyframe = keyframe->GetParent();
+        }
+        if (!keyframe || keyframe->GetMap() != map) continue;
+        const Sophus::SE3f referencePose = parentTransform * keyframe->GetPose() * worldOrigin;
+        const Sophus::SE3f bodyPose = (keyframe->mImuCalib.mTbc * relative * referencePose).inverse();
+        if (bodyPose.matrix().allFinite())
+            trajectory.emplace_back(timestamp, bodyPose.translation().cast<double>());
+    }
+    return trajectory;
 }
 
 vector<MapPoint*> System::GetTrackedMapPoints()

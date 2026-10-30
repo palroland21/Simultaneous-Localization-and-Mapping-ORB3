@@ -26,6 +26,8 @@
 #include<stdlib.h>
 #include<string>
 #include<thread>
+#include<utility>
+#include<vector>
 #include<opencv2/core/core.hpp>
 
 #include "Tracking.h"
@@ -174,6 +176,13 @@ public:
     // Information from most recent processed frame
     // You can call this right after TrackMonocular (or stereo or RGBD)
     int GetTrackingState();
+    // Call on the tracking thread immediately after TrackStereo. Uses the frame's
+    // effective (rectified) camera-to-body calibration. GT never enters tracking.
+    bool GetCurrentBodyPose(Sophus::SE3f &Twb, unsigned long &mapId,
+                            unsigned long &originId, bool &imuInitialized);
+    // Same reconstruction as SaveTrajectoryEuRoC, without writing a file.
+    // Call on the tracking thread between frames, or after Shutdown().
+    std::vector<std::pair<double, Eigen::Vector3d>> GetOptimizedBodyTrajectory(bool largestMap = false);
     std::vector<MapPoint*> GetTrackedMapPoints();
     std::vector<cv::KeyPoint> GetTrackedKeyPointsUn();
 

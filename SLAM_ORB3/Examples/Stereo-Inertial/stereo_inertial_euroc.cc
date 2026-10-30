@@ -23,6 +23,7 @@
 #include<chrono>
 #include <ctime>
 #include <sstream>
+#include <cstdlib>
 
 #include <opencv2/core/core.hpp>
 
@@ -30,6 +31,7 @@
 #include<System.h>
 #include "ImuTypes.h"
 #include "Optimizer.h"
+#include "LiveGroundTruth.h"
 
 using namespace std;
 
@@ -37,6 +39,21 @@ void LoadImages(const string &strPathLeft, const string &strPathRight, const str
                 vector<string> &vstrImageLeft, vector<string> &vstrImageRight, vector<double> &vTimeStamps);
 
 void LoadIMU(const string &strImuPath, vector<double> &vTimeStamps, vector<cv::Point3f> &vAcc, vector<cv::Point3f> &vGyro);
+
+void PrintEvaluation(const orb3_live::GroundTruth::Result& error, const char* label)
+{
+    std::cout << std::fixed << std::setprecision(3) << label;
+    if (error.valid())
+    {
+        if (error.positionValid) std::cout << " PositionError=" << error.positionError << "m";
+        else std::cout << " PositionError=N/A";
+        std::cout << " | ATE_RMSE=" << error.rmse << "m";
+    }
+    else
+        std::cout << " PositionError=N/A | ATE_RMSE=N/A | Reason=" << error.status;
+    std::cout << " | Samples=" << error.samples << " | GT_lag=" << error.lag * 1000.0
+              << "ms" << std::endl;
+}
 
 
 int main(int argc, char **argv)
@@ -108,9 +125,9 @@ int main(int argc, char **argv)
 
         // Find first imu to be considered, supposing imu measurements start first
 
-        while(vTimestampsImu[seq][first_imu[seq]]<=vTimestampsCam[seq][0])
+        while(first_imu[seq] < nImu[seq] && vTimestampsImu[seq][first_imu[seq]]<=vTimestampsCam[seq][0])
             first_imu[seq]++;
-        first_imu[seq]--; // first imu measurement to be considered
+        first_imu[seq] = std::max(0, first_imu[seq]-1);
     }
 
     // Read rectification parameters
@@ -129,9 +146,12 @@ int main(int argc, char **argv)
     cout.precision(17);
 
     // Create SLAM system. It initializes all system threads and gets ready to process frames.
-    ORB_SLAM3::System SLAM(argv[1],argv[2],ORB_SLAM3::System::IMU_STEREO, true);
+    const char* viewer = std::getenv("ORB3_VIEWER");
+    const bool useViewer = !viewer || std::string(viewer) != "0";
+    ORB_SLAM3::System SLAM(argv[1],argv[2],ORB_SLAM3::System::IMU_STEREO, useViewer);
 
     cv::Mat imLeft, imRight;
+    vector<orb3_live::GroundTruth> evaluations(num_seq);
     for (seq = 0; seq<num_seq; seq++)
     {
         // Seq loop
@@ -142,6 +162,13 @@ int main(int argc, char **argv)
         int num_rect = 0;
         int proccIm = 0;
         double lastMonitorTime = -1.0;
+        orb3_live::GroundTruth& evaluation = evaluations[seq];
+        const char* gtOverride = std::getenv("ORB3_GT");
+        const std::string gtPath = gtOverride ? gtOverride :
+            std::string(argv[2*seq+3]) + "/mav0/state_groundtruth_estimate0/data.csv";
+        std::cout << "[ORB3 EVAL] Body/IMU ground truth: " << gtPath
+                  << (evaluation.load(gtPath) ? " [LOADED]" : " [GT_NOT_LOADED: missing or invalid file]")
+                  << std::endl;
         for(int ni=0; ni<nImages[seq]; ni++, proccIm++)
         {
             // Read left and right images from file
@@ -168,7 +195,7 @@ int main(int argc, char **argv)
             vImuMeas.clear();
 
             if(ni>0)
-                while(vTimestampsImu[seq][first_imu[seq]]<=vTimestampsCam[seq][ni]) // while(vTimestampsImu[first_imu]<=vTimestampsCam[ni])
+                while(first_imu[seq] < nImu[seq] && vTimestampsImu[seq][first_imu[seq]]<=vTimestampsCam[seq][ni])
                 {
                     vImuMeas.push_back(ORB_SLAM3::IMU::Point(vAcc[seq][first_imu[seq]].x,vAcc[seq][first_imu[seq]].y,vAcc[seq][first_imu[seq]].z,
                                                              vGyro[seq][first_imu[seq]].x,vGyro[seq][first_imu[seq]].y,vGyro[seq][first_imu[seq]].z,
@@ -183,7 +210,7 @@ int main(int argc, char **argv)
     #endif
 
             // Pass the images to the SLAM system
-            Sophus::SE3f Tcw = SLAM.TrackStereo(imLeft,imRight,tframe,vImuMeas);
+            SLAM.TrackStereo(imLeft,imRight,tframe,vImuMeas);
 
     #ifdef COMPILEDWITHC11
             std::chrono::steady_clock::time_point t2 = std::chrono::steady_clock::now();
@@ -200,10 +227,22 @@ int main(int argc, char **argv)
 
             vTimesTrack[ni]=ttrack;
             const double elapsedTime = tframe - vTimestampsCam[seq][0];
+            Sophus::SE3f Twb;
+            unsigned long mapId = 0, originId = 0;
+            bool imuInitialized = false;
+            const bool bodyTracked = SLAM.GetCurrentBodyPose(Twb, mapId, originId, imuInitialized);
 
             if (ni == 0 || elapsedTime - lastMonitorTime >= 1.0)
             {
                 lastMonitorTime = elapsedTime;
+                orb3_live::GroundTruth::Result error;
+                if (imuInitialized)
+                {
+                    error = evaluation.evaluate(SLAM.GetOptimizedBodyTrajectory(),
+                                                vTimestampsCam[seq].front(), tframe);
+                    if (!bodyTracked) error.positionValid = false;
+                }
+                else error.status = bodyTracked ? "WAIT_IMU" : "WAIT_TRACKING";
 
                 const int trackingState = SLAM.GetTrackingState();
                 const std::vector<ORB_SLAM3::MapPoint*> trackedPoints = SLAM.GetTrackedMapPoints();
@@ -241,17 +280,16 @@ int main(int argc, char **argv)
                 std::cout << " | IMU_Samples=" << vImuMeas.size();
                 std::cout << " | Processing=" << ttrack * 1000.0 << "ms" << std::endl;
 
-                if (trackingState == 2 || trackingState == 5)
+                if (bodyTracked && imuInitialized)
                 {
-                    const Sophus::SE3f Twc = Tcw.inverse();
-                    const Eigen::Vector3f position = Twc.translation();
-                    const Eigen::Quaternionf orientation = Twc.unit_quaternion();
+                    const Eigen::Vector3f position = Twb.translation();
+                    const Eigen::Quaternionf orientation = Twb.unit_quaternion();
 
-                    std::cout << "[ORB3 LIVE] p_CinW=(" << position.x() << "," << position.y() << "," << position.z() << ")m";
+                    std::cout << "[ORB3 LIVE] p_BinW=(" << position.x() << "," << position.y() << "," << position.z() << ")m";
                     std::cout << std::setprecision(1);
                     std::cout << " | CAM0=" << camHz << "Hz | CAM1=" << camHz << "Hz | IMU=" << imuHz << "Hz" << std::endl;
                     std::cout << std::setprecision(3);
-                    std::cout << "[ORB3 LIVE] q_CtoW_xyzw=(" << orientation.x() << "," << orientation.y() << "," << orientation.z() << "," << orientation.w() << ")" << std::endl;
+                    std::cout << "[ORB3 LIVE] q_BtoW_xyzw=(" << orientation.x() << "," << orientation.y() << "," << orientation.z() << "," << orientation.w() << ")" << std::endl;
                 }
                 else
                 {
@@ -261,7 +299,7 @@ int main(int argc, char **argv)
                     std::cout << std::setprecision(3);
                 }
 
-                std::cout << "[ORB3 EVAL] PositionError=N/A | ATE_RMSE=N/A" << std::endl;
+                PrintEvaluation(error, "[ORB3 EVAL]");
                 std::cout << std::endl;
             }
 
@@ -288,6 +326,13 @@ int main(int argc, char **argv)
     // Stop all threads
     SLAM.Shutdown();
 
+    const auto finalTrajectory = SLAM.GetOptimizedBodyTrajectory(true);
+    for (seq = 0; seq < num_seq; ++seq)
+    {
+        if (num_seq > 1) std::cout << "Sequence " << seq << std::endl;
+        PrintEvaluation(evaluations[seq].evaluate(finalTrajectory,
+                            vTimestampsCam[seq].front(), vTimestampsCam[seq].back()), "[ORB3 FINAL]");
+    }
 
     // Save camera trajectory
     if (bFileName)
