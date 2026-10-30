@@ -9,15 +9,31 @@ PROJECT="$(dirname "$ROOT")"
 DATASETS="${ORB3_DATASETS:-$HOME/SLAM_Project/datasets/euroc}"
 ARG="${1:-}"
 if [[ -z "$ARG" || "$ARG" == --help || "$ARG" == -h ]]; then
-  cat <<EOF
-Usage: ./orb3 MH_01_easy
-           ./orb3 MH_02_easy
-           ./orb3 /path/to/EuRoC_ASL_dataset
+  echo "Available datasets:"
+  declare -A seen=()
+  found=0
 
-Expected official ORB-SLAM3 repository: $ROOT
-Looks for .bag files in: $DATASETS
-Runs stereo + IMU with the Pangolin viewer (no ROS required).
-EOF
+  for entry in "$DATASETS"/*; do
+    if [[ -f "$entry" && "$entry" == *.bag ]]; then
+      name="${entry##*/}"
+      name="${name%.bag}"
+    elif [[ -d "$entry/mav0/cam0/data" && -d "$entry/mav0/cam1/data" && -f "$entry/mav0/imu0/data.csv" ]]; then
+      name="${entry##*/}"
+    else
+      continue
+    fi
+
+    if [[ -z "${seen[$name]+x}" ]]; then
+      seen["$name"]=1
+      printf '  ./orb3 %s\n' "$name"
+      found=1
+    fi
+  done
+
+  if (( found == 0 )); then
+    echo "  No datasets found in $DATASETS"
+  fi
+
   exit 0
 fi
 
