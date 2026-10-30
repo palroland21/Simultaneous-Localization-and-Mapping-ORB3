@@ -1,0 +1,30 @@
+# Istoric Git original
+.orb3_original_git_backup/
+
+# Compilare
+**/build/
+**/build_*/
+*.o
+*.so
+*.a
+
+# Fisiere generate
+*.log
+SLAM_ORB3/Vocabulary/ORBvoc.txt
+SLAM_ORB3/outputs/
+SLAM_ORB3/datasets/
+outputs/
+datasets/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Dataseturi
+*.bag
+*.db3
+*.mcap
+
+# Configuratie locala
+.env
