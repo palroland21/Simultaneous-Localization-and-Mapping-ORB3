@@ -141,6 +141,7 @@ int main(int argc, char **argv)
         double t_track = 0.f;
         int num_rect = 0;
         int proccIm = 0;
+        double lastMonitorTime = -1.0;
         for(int ni=0; ni<nImages[seq]; ni++, proccIm++)
         {
             // Read left and right images from file
@@ -182,7 +183,7 @@ int main(int argc, char **argv)
     #endif
 
             // Pass the images to the SLAM system
-            SLAM.TrackStereo(imLeft,imRight,tframe,vImuMeas);
+            Sophus::SE3f Tcw = SLAM.TrackStereo(imLeft,imRight,tframe,vImuMeas);
 
     #ifdef COMPILEDWITHC11
             std::chrono::steady_clock::time_point t2 = std::chrono::steady_clock::now();
@@ -198,6 +199,71 @@ int main(int argc, char **argv)
             double ttrack= std::chrono::duration_cast<std::chrono::duration<double> >(t2 - t1).count();
 
             vTimesTrack[ni]=ttrack;
+            const double elapsedTime = tframe - vTimestampsCam[seq][0];
+
+            if (ni == 0 || elapsedTime - lastMonitorTime >= 1.0)
+            {
+                lastMonitorTime = elapsedTime;
+
+                const int trackingState = SLAM.GetTrackingState();
+                const std::vector<ORB_SLAM3::MapPoint*> trackedPoints = SLAM.GetTrackedMapPoints();
+                const size_t trackedCount = std::count_if(trackedPoints.begin(), trackedPoints.end(), [](ORB_SLAM3::MapPoint* point) {
+                    return point != nullptr;
+                });
+
+                std::string stateName = "UNKNOWN";
+                if (trackingState == 1) stateName = "INITIALIZING";
+                else if (trackingState == 2) stateName = "OK";
+                else if (trackingState == 3) stateName = "RECENTLY_LOST";
+                else if (trackingState == 4) stateName = "LOST";
+                else if (trackingState == 5) stateName = "OK_KLT";
+
+                const double windowStart = tframe - 1.0;
+                const auto camBegin = std::lower_bound(vTimestampsCam[seq].cbegin(), vTimestampsCam[seq].cend(), windowStart);
+                const auto camEnd = std::upper_bound(vTimestampsCam[seq].cbegin(), vTimestampsCam[seq].cend(), tframe);
+                const auto imuBegin = std::lower_bound(vTimestampsImu[seq].cbegin(), vTimestampsImu[seq].cend(), windowStart);
+                const auto imuEnd = std::upper_bound(vTimestampsImu[seq].cbegin(), vTimestampsImu[seq].cend(), tframe);
+
+                const auto calculateHz = [](std::vector<double>::const_iterator begin, std::vector<double>::const_iterator end) -> double {
+                    const auto count = std::distance(begin, end);
+                    if (count < 2) return 0.0;
+                    const double duration = *(end - 1) - *begin;
+                    return duration > 0.0 ? static_cast<double>(count - 1) / duration : 0.0;
+                };
+
+                const double camHz = calculateHz(camBegin, camEnd);
+                const double imuHz = calculateHz(imuBegin, imuEnd);
+
+                std::cout << std::fixed << std::setprecision(3);
+                std::cout << "[ORB3 LIVE] t=" << elapsedTime << "s";
+                std::cout << " | State=" << stateName;
+                std::cout << " | TrackedMP=" << trackedCount;
+                std::cout << " | IMU_Samples=" << vImuMeas.size();
+                std::cout << " | Processing=" << ttrack * 1000.0 << "ms" << std::endl;
+
+                if (trackingState == 2 || trackingState == 5)
+                {
+                    const Sophus::SE3f Twc = Tcw.inverse();
+                    const Eigen::Vector3f position = Twc.translation();
+                    const Eigen::Quaternionf orientation = Twc.unit_quaternion();
+
+                    std::cout << "[ORB3 LIVE] p_CinW=(" << position.x() << "," << position.y() << "," << position.z() << ")m";
+                    std::cout << std::setprecision(1);
+                    std::cout << " | CAM0=" << camHz << "Hz | CAM1=" << camHz << "Hz | IMU=" << imuHz << "Hz" << std::endl;
+                    std::cout << std::setprecision(3);
+                    std::cout << "[ORB3 LIVE] q_CtoW_xyzw=(" << orientation.x() << "," << orientation.y() << "," << orientation.z() << "," << orientation.w() << ")" << std::endl;
+                }
+                else
+                {
+                    std::cout << std::setprecision(1);
+                    std::cout << "[ORB3 LIVE] Position=N/A";
+                    std::cout << " | CAM0=" << camHz << "Hz | CAM1=" << camHz << "Hz | IMU=" << imuHz << "Hz" << std::endl;
+                    std::cout << std::setprecision(3);
+                }
+
+                std::cout << "[ORB3 EVAL] PositionError=N/A | ATE_RMSE=N/A" << std::endl;
+                std::cout << std::endl;
+            }
 
             // Wait to load the next frame
             double T=0;
