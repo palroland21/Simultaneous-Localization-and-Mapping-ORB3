@@ -105,8 +105,7 @@ PANGO_ARGS=("-DPangolin_DIR=$PANGO_DIR")
 # The only automated ORB-SLAM3 source change is enabling the viewer.
 DEMO_SRC="$ROOT/Examples/Stereo-Inertial/stereo_inertial_euroc.cc"
 if grep -q 'ORB_SLAM3::System::IMU_STEREO, false)' "$DEMO_SRC"; then
-  echo "[ORB3] Enabling the 3D viewer in the EuRoC example (backup: .orb3_original)."
-  cp -n "$DEMO_SRC" "$DEMO_SRC.orb3_original"
+  echo "[ORB3] Enabling the 3D viewer in the EuRoC example."
   sed -i 's/ORB_SLAM3::System::IMU_STEREO, false)/ORB_SLAM3::System::IMU_STEREO, true)/' "$DEMO_SRC"
 fi
 
@@ -285,10 +284,19 @@ if [[ -n "${PANGO_BUILD:-}" && -d "$PANGO_BUILD" ]]; then
   done < <(find "$PANGO_BUILD" -type f -name '*.so*' -printf '%h\n' | sort -u)
 fi
 
+# Prefer the sequence's body ground truth, then the matching bundled EuRoC IMU GT.
+if [[ -z "${ORB3_GT+x}" && ! -f "$SEQ/mav0/state_groundtruth_estimate0/data.csv" ]]; then
+  case "$NAME" in
+    MH_*) export ORB3_GT="$ROOT/evaluation/Ground_truth/EuRoC_imu/MH_GT.txt" ;;
+    V1_*) export ORB3_GT="$ROOT/evaluation/Ground_truth/EuRoC_imu/V1_GT.txt" ;;
+    V2_*) export ORB3_GT="$ROOT/evaluation/Ground_truth/EuRoC_imu/V2_GT.txt" ;;
+  esac
+fi
+
 echo "[ORB3] Dataset: $NAME"
 echo "[ORB3] Data path: $SEQ"
 echo "[ORB3] Output directory: $OUT"
-echo "[ORB3] Mode: STEREO + IMU | Pangolin viewer: ENABLED"
+echo "[ORB3] Mode: STEREO + IMU | Pangolin viewer: ${ORB3_VIEWER:-1} (0=disabled, 1=enabled)"
 echo "[ORB3] Starting processing. Stop with Ctrl+C"
 cd "$OUT"
 exec "$BIN" "$ROOT/Vocabulary/ORBvoc.txt" "$ROOT/Examples/Stereo-Inertial/EuRoC.yaml" "$SEQ" "$TIMES"

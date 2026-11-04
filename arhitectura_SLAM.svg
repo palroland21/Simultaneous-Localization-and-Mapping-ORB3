@@ -1,0 +1,109 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1360" viewBox="0 0 1800 1360">
+<rect width="1800" height="1360" fill="#FFFFFF"/>
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 Z" fill="#232B36"/></marker><marker id="arrowPink" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 Z" fill="#D05A66"/></marker><marker id="arrowGreen" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 Z" fill="#198754"/></marker><marker id="arrowBlue" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 Z" fill="#2474AB"/></marker></defs>
+<rect x="34" y="18" width="1732" height="49" rx="12" fill="#F6F9FD" stroke="#D4E0ED" stroke-width="2.4"/>
+<text x="900" y="51" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="29" font-weight="bold" fill="#17212C">FAULT-TOLERANT MULTI-SENSOR LOCALIZATION ARCHITECTURE</text>
+<rect x="40" y="85" width="325" height="145" rx="14" fill="#D7EBFF" stroke="#2C8BCC" stroke-width="2.4"/>
+<rect x="400" y="85" width="235" height="145" rx="14" fill="#FFE0E0" stroke="#E35D66" stroke-width="2.4"/>
+<rect x="710" y="85" width="260" height="145" rx="14" fill="#E1F5DC" stroke="#409348" stroke-width="2.4"/>
+<rect x="1030" y="85" width="270" height="145" rx="14" fill="#FFF0C9" stroke="#D49824" stroke-width="2.4"/>
+<rect x="1380" y="85" width="360" height="145" rx="14" fill="#E9DFFF" stroke="#835BC0" stroke-width="2.4"/>
+<text x="202" y="114" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="24" font-weight="bold" fill="#17212C">STEREO RGB</text>
+<rect x="127" y="135" width="66" height="47" rx="7" fill="#37475D" stroke="#202B3C" stroke-width="2"/><circle cx="160" cy="158" r="18" fill="#111B29" stroke="#7F93A3" stroke-width="5"/><circle cx="160" cy="158" r="9" fill="#315675"/>
+<rect x="212" y="135" width="66" height="47" rx="7" fill="#37475D" stroke="#202B3C" stroke-width="2"/><circle cx="245" cy="158" r="18" fill="#111B29" stroke="#7F93A3" stroke-width="5"/><circle cx="245" cy="158" r="9" fill="#315675"/>
+<text x="202" y="213" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="normal" fill="#17212C">CAM0 + CAM1  |  20 Hz each</text>
+<text x="518" y="114" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="24" font-weight="bold" fill="#17212C">IMU</text>
+<rect x="475" y="138" width="86" height="45" rx="9" fill="#34383F" stroke="#181B22" stroke-width="2"/><circle cx="491" cy="149" r="3" fill="#BFC4CA"/><circle cx="545" cy="171" r="3" fill="#BFC4CA"/>
+<text x="518" y="213" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="19" font-weight="normal" fill="#17212C">200 Hz</text>
+<text x="840" y="114" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="24" font-weight="bold" fill="#17212C">LiDAR</text>
+<rect x="802" y="143" width="76" height="54" rx="9" fill="#374658" stroke="#263748" stroke-width="2"/><rect x="802" y="143" width="76" height="20" fill="#25B9D3"/><ellipse cx="840" cy="143" rx="38" ry="11" fill="#7BD3E1" stroke="#374658" stroke-width="2"/>
+<text x="840" y="213" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="normal" fill="#17212C">Scan sensor</text>
+<text x="1165" y="114" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="22" font-weight="bold" fill="#17212C">THERMAL CAMERA</text>
+<rect x="1105" y="136" width="66" height="47" rx="7" fill="#37475D" stroke="#202B3C" stroke-width="2"/><circle cx="1138" cy="159" r="18" fill="#111B29" stroke="#7F93A3" stroke-width="5"/><circle cx="1138" cy="159" r="9" fill="#315675"/>
+<rect x="1177" y="137" width="55" height="45" rx="4" fill="#65238C"/><path d="M1180 166 Q1197 130 1228 154 L1228 177 L1180 177 Z" fill="#F5631B"/><circle cx="1208" cy="152" r="11" fill="#F8C240"/>
+<text x="1165" y="213" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="normal" fill="#17212C">Thermal images</text>
+<text x="1560" y="114" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="24" font-weight="bold" fill="#17212C">GPS RTK</text>
+<ellipse cx="1560" cy="153" rx="57" ry="20" fill="#D7DBE0" stroke="#737D8A" stroke-width="2"/><path d="M1516,159 L1533,179 L1587,179 L1604,159" fill="#8B949E"/><rect x="1554" y="179" width="12" height="14" fill="#687382"/>
+<text x="1560" y="213" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="normal" fill="#17212C">GNSS position</text>
+<rect x="40" y="305" width="575" height="245" rx="14" fill="#CCE5FF" stroke="#287DC6" stroke-width="2.4"/>
+<rect x="715" y="305" width="260" height="245" rx="14" fill="#DFF5DA" stroke="#45A04D" stroke-width="2.4"/>
+<rect x="1035" y="305" width="270" height="245" rx="14" fill="#FFF0C8" stroke="#D79D27" stroke-width="2.4"/>
+<rect x="1385" y="305" width="355" height="245" rx="14" fill="#EBE1FF" stroke="#8862C0" stroke-width="2.4"/>
+<text x="328" y="342" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="29" font-weight="bold" fill="#17212C">ORB-SLAM3</text>
+<text x="328" y="376" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="21" font-weight="bold" fill="#17212C">Visual-Inertial Optimization</text>
+<rect x="62" y="402" width="254" height="49" rx="7" fill="#EEF7FF" stroke="#92C3EE" stroke-width="2.4"/>
+<rect x="333" y="402" width="257" height="49" rx="7" fill="#EEF7FF" stroke="#92C3EE" stroke-width="2.4"/>
+<rect x="62" y="466" width="254" height="49" rx="7" fill="#EEF7FF" stroke="#92C3EE" stroke-width="2.4"/>
+<rect x="333" y="466" width="257" height="49" rx="7" fill="#EEF7FF" stroke="#92C3EE" stroke-width="2.4"/>
+<text x="189" y="434" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="normal" fill="#17212C">ORB tracking + matching</text>
+<text x="460" y="434" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="normal" fill="#17212C">IMU preintegration</text>
+<text x="189" y="498" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="bold" fill="#17212C">VI-BA optimization</text>
+<text x="460" y="498" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="normal" fill="#17212C">Loop closure + mapping</text>
+<text x="845" y="347" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="22" font-weight="bold" fill="#17212C">LiDAR PROCESSING</text>
+<text x="845" y="400" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="normal" fill="#17212C">Scan registration</text>
+<text x="845" y="440" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="normal" fill="#17212C">Motion estimation</text>
+<text x="845" y="480" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="normal" fill="#17212C">LiDAR odometry</text>
+<text x="1170" y="347" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="21" font-weight="bold" fill="#17212C">THERMAL PROCESSING</text>
+<text x="1170" y="400" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="normal" fill="#17212C">Image preprocessing</text>
+<text x="1170" y="440" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="normal" fill="#17212C">Feature tracking</text>
+<text x="1170" y="480" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="normal" fill="#17212C">Thermal odometry</text>
+<text x="1562" y="347" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="23" font-weight="bold" fill="#17212C">GNSS PROCESSING</text>
+<text x="1562" y="400" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="normal" fill="#17212C">Coordinate conversion</text>
+<text x="1562" y="440" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="normal" fill="#17212C">Quality checks</text>
+<text x="1562" y="480" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="normal" fill="#17212C">Position + uncertainty</text>
+<polyline points="202,230 202,305" fill="none" stroke="#232B36" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="518,230 518,305" fill="none" stroke="#232B36" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="840,230 840,305" fill="none" stroke="#232B36" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="1165,230 1165,305" fill="none" stroke="#232B36" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="1560,230 1560,305" fill="none" stroke="#232B36" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="635,158 667,158 667,785" fill="none" stroke="#D05A66" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="681" y="714" text-anchor="start" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="bold" fill="#AE4855">IMU raw data</text>
+<text x="681" y="738" text-anchor="start" font-family="DejaVu Sans, Arial, sans-serif" font-size="15" font-weight="normal" fill="#AE4855">(for EKF prediction)</text>
+<rect x="75" y="602" width="245" height="95" rx="14" fill="#DDF0FF" stroke="#418FD2" stroke-width="2.4"/>
+<rect x="355" y="602" width="250" height="95" rx="14" fill="#E9E0FF" stroke="#8864C1" stroke-width="2.4"/>
+<rect x="715" y="602" width="260" height="95" rx="14" fill="#E8F8E5" stroke="#63AC61" stroke-width="2.4"/>
+<rect x="1035" y="602" width="270" height="95" rx="14" fill="#FFF4DB" stroke="#D7A236" stroke-width="2.4"/>
+<rect x="1385" y="602" width="355" height="95" rx="14" fill="#F0E8FF" stroke="#9672CC" stroke-width="2.4"/>
+<text x="198" y="635" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="21" font-weight="bold" fill="#17212C">POSE ESTIMATE</text>
+<text x="198" y="669" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="normal" fill="#17212C">position + orientation</text>
+<text x="480" y="635" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="23" font-weight="bold" fill="#17212C">3D MAP</text>
+<text x="480" y="668" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="normal" fill="#17212C">ORB-SLAM3 output only</text>
+<text x="845" y="635" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="19" font-weight="bold" fill="#17212C">LiDAR ODOMETRY</text>
+<text x="845" y="670" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="normal" fill="#17212C">pose + uncertainty</text>
+<text x="1170" y="635" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="bold" fill="#17212C">THERMAL ODOMETRY</text>
+<text x="1170" y="670" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="normal" fill="#17212C">pose + uncertainty</text>
+<text x="1560" y="635" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="20" font-weight="bold" fill="#17212C">GPS RTK POSITION</text>
+<text x="1560" y="670" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="normal" fill="#17212C">position + uncertainty</text>
+<polyline points="198,550 198,602" fill="none" stroke="#232B36" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="480,550 480,602" fill="none" stroke="#232B36" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="845,550 845,602" fill="none" stroke="#232B36" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="1170,550 1170,602" fill="none" stroke="#232B36" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="1560,550 1560,602" fill="none" stroke="#232B36" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<rect x="415" y="785" width="1325" height="120" rx="14" fill="#F1F2F5" stroke="#77818D" stroke-width="2.4"/>
+<text x="1077" y="818" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="25" font-weight="bold" fill="#17212C">SENSOR VALIDATION AND FAULT DETECTION</text>
+<text x="1077" y="853" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="normal" fill="#17212C">Sensor health  |  Outlier rejection  |  Consistency checks  |  Active sensor selection</text>
+<text x="1077" y="883" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="normal" fill="#17212C">Reject invalid updates; keep valid sources available</text>
+<polyline points="198,697 198,739 500,739 500,785" fill="none" stroke="#232B36" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="845,697 845,785" fill="none" stroke="#232B36" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="1170,697 1170,785" fill="none" stroke="#232B36" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="1560,697 1560,785" fill="none" stroke="#232B36" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<rect x="50" y="963" width="365" height="125" rx="14" fill="#F8F9FA" stroke="#7A8794" stroke-width="2.4"/>
+<text x="233" y="997" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="20" font-weight="bold" fill="#17212C">SYSTEM PARAMETERS</text>
+<text x="233" y="1029" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="normal" fill="#17212C">Calibration + synchronization</text>
+<text x="233" y="1059" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="normal" fill="#17212C">Noise models + sensor timing</text>
+<rect x="500" y="949" width="1135" height="165" rx="14" fill="#FFE0B8" stroke="#E5862E" stroke-width="2.4"/>
+<text x="1067" y="991" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="28" font-weight="bold" fill="#17212C">MULTI-SENSOR EKF  (STATE ESTIMATOR)</text>
+<text x="1067" y="1033" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="21" font-weight="normal" fill="#17212C">IMU prediction  +  validated measurement updates</text>
+<text x="1067" y="1069" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="20" font-weight="normal" fill="#17212C">Covariance update  +  fault-tolerant fusion</text>
+<polyline points="1077,905 1077,949" fill="none" stroke="#232B36" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="415,1028 500,1028" fill="none" stroke="#232B36" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<rect x="570" y="1153" width="460" height="65" rx="14" fill="#D8EDFF" stroke="#398CD2" stroke-width="2.4"/>
+<rect x="1115" y="1153" width="460" height="65" rx="14" fill="#FFE0E0" stroke="#D96168" stroke-width="2.4"/>
+<text x="800" y="1180" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="20" font-weight="bold" fill="#17212C">FINAL ROBOT STATE</text>
+<text x="800" y="1204" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="15" font-weight="normal" fill="#17212C">position, orientation, velocity, uncertainty</text>
+<text x="1345" y="1180" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="20" font-weight="bold" fill="#17212C">FUSED TRAJECTORY</text>
+<text x="1345" y="1204" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="normal" fill="#17212C">navigation / control output</text>
+<polyline points="800,1114 800,1153" fill="none" stroke="#232B36" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="1345,1114 1345,1153" fill="none" stroke="#232B36" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<polyline points="75,648 20,648 20,463 40,463" fill="none" stroke="#2474AB" stroke-width="4" stroke-dasharray="13 8" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowBlue)"/><polyline points="800,1218 800,1275 1765,1275 1765,1023 1635,1023" fill="none" stroke="#198754" stroke-width="4.5" stroke-dasharray="14 8" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowGreen)"/><rect x="44" y="707" width="298" height="38" rx="8" fill="#EAF5FF" stroke="#93BFE3" stroke-width="1.2"/><text x="193" y="733" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="bold" fill="#2474AB">ORB previous-frame feedback</text><rect x="991" y="1294" width="730" height="43" rx="9" fill="#EAF7EE" stroke="#7AC59B" stroke-width="1.5"/><text x="1356" y="1322" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="21" font-weight="bold" fill="#177849">EKF feedback: previous state + covariance → next prediction</text><text x="64" y="1324" text-anchor="start" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" fill="#516477">No EKF → ORB-SLAM3 feedback in the base design</text></svg>

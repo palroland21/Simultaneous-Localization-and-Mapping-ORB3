@@ -51,8 +51,7 @@ void PrintEvaluation(const orb3_live::GroundTruth::Result& error, const char* la
     }
     else
         std::cout << " PositionError=N/A | ATE_RMSE=N/A | Reason=" << error.status;
-    std::cout << " | Samples=" << error.samples << " | GT_lag=" << error.lag * 1000.0
-              << "ms" << std::endl;
+    std::cout << " | Samples=" << error.samples << std::endl;
 }
 
 

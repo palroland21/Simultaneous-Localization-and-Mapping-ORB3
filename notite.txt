@@ -1,0 +1,25 @@
+
+
+1. Sa folosesc ORB3 pentru ca are deja vizualizare buna
+2. are loop closure => are precizie mai buna
+3. construieste harta 3d
+
+3. sa introduc si alg de EKF pt celelalte senzori + fault tolerance 
+pt ca ORB-SLAM3 este facut pt estimarea miscarii folodind stereo+imu si contrueste harta 3D
+EKF (Extended Kalman Filter) => combina estimarea ORB3 cu informatii de la ceilalti senzori
+Faul tolerance => Detecteaza masuratorile defecte si decide ce informatii sunt folosite in EKF.
+
+
+VI-BA((Visual-Inertial Bundle Adjustment): fuziune Stereo + IMU pentru localizare si optimizarea hartii
+EKF: fuziune multisenzoriala pentru estimarea finala a robotului si 
+      continuitatea localizarii in cazul defectarii unor senzori.
+
+
+
+
+Build + Compilare:
+cd ~/SLAM_Project/ORB3_PROJECT
+cmake --build SLAM_ORB3/build --target stereo_inertial_euroc --parallel 2 && ./orb3 MH_01_easy
+
+Compilare:
+./orb3 MH_01_easy
