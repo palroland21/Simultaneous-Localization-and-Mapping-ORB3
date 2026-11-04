@@ -17,6 +17,7 @@
 */
 
 
+#include <cstdlib>
 #include<iostream>
 #include<algorithm>
 #include<fstream>
@@ -28,11 +29,13 @@
 
 #include<System.h>
 #include "ImuTypes.h"
+#include "../LiveMonitor.h"
+
+using orb3_live::PrintEvaluation;
 
 using namespace std;
 
-void LoadImages(const string &strImagePath, const string &strPathTimes,
-                vector<string> &vstrImages, vector<double> &vTimeStamps);
+void LoadImages(const string &strImagePath, const string &strPathTimes, vector<string> &vstrImages, vector<double> &vTimeStamps);
 
 void LoadIMU(const string &strImuPath, vector<double> &vTimeStamps, vector<cv::Point3f> &vAcc, vector<cv::Point3f> &vGyro);
 
@@ -117,12 +120,15 @@ int main(int argc, char *argv[])
     cout.precision(17);
 
     // Create SLAM system. It initializes all system threads and gets ready to process frames.
-    ORB_SLAM3::System SLAM(argv[1],argv[2],ORB_SLAM3::System::IMU_MONOCULAR, true);
+    const char* viewer = std::getenv("ORB3_VIEWER");
+    const bool useViewer = !viewer || std::string(viewer) != "0";
+    ORB_SLAM3::System SLAM(argv[1],argv[2],ORB_SLAM3::System::IMU_MONOCULAR, useViewer);
     float imageScale = SLAM.GetImageScale();
 
     double t_resize = 0.f;
     double t_track = 0.f;
 
+    vector<orb3_live::GroundTruth> evaluations(num_seq);
     int proccIm=0;
     for (seq = 0; seq<num_seq; seq++)
     {
@@ -131,6 +137,13 @@ int main(int argc, char *argv[])
         cv::Mat im;
         vector<ORB_SLAM3::IMU::Point> vImuMeas;
         proccIm = 0;
+        double lastMonitorTime = -1.0;
+        orb3_live::GroundTruth& evaluation = evaluations[seq];
+        const char* gtOverride = std::getenv("ORB3_GT");
+        const std::string gtPath = gtOverride ? gtOverride : std::string(argv[2*seq+3]) + "/mav0/state_groundtruth_estimate0/data.csv";
+        std::cout << "[ORB3 EVAL] Body/IMU ground truth: " << gtPath
+                  << (evaluation.load(gtPath) ? " [LOADED]" : " [GT_NOT_LOADED: missing or invalid file]")
+                  << std::endl;
         for(int ni=0; ni<nImages[seq]; ni++, proccIm++)
         {
             // Read image from file
@@ -210,6 +223,7 @@ int main(int argc, char *argv[])
             // std::cout << "ttrack: " << ttrack << std::endl;
 
             vTimesTrack[ni]=ttrack;
+            orb3_live::PrintMonitor(SLAM, evaluation, vTimestampsCam[seq], vTimestampsImu[seq], tframe, ttrack, vImuMeas.size(), ni == 0, false, lastMonitorTime);
 
             // Wait to load the next frame
             double T=0;
@@ -232,6 +246,13 @@ int main(int argc, char *argv[])
     // Stop all threads
     SLAM.Shutdown();
 
+    const auto finalTrajectory = SLAM.GetOptimizedBodyTrajectory(true);
+    for (seq = 0; seq < num_seq; ++seq)
+    {
+        if (num_seq > 1) std::cout << "Sequence " << seq << std::endl;
+        PrintEvaluation(evaluations[seq].evaluate(finalTrajectory, vTimestampsCam[seq].front(), vTimestampsCam[seq].back()), "[ORB3 FINAL]");
+    }
+
     // Save camera trajectory
     if (bFileName)
     {
@@ -249,8 +270,7 @@ int main(int argc, char *argv[])
     return 0;
 }
 
-void LoadImages(const string &strImagePath, const string &strPathTimes,
-                vector<string> &vstrImages, vector<double> &vTimeStamps)
+void LoadImages(const string &strImagePath, const string &strPathTimes, vector<string> &vstrImages, vector<double> &vTimeStamps)
 {
     ifstream fTimes;
     fTimes.open(strPathTimes.c_str());

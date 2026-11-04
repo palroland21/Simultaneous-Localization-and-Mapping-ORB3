@@ -16,6 +16,7 @@
 * If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include <cstdlib>
 #include<iostream>
 #include<algorithm>
 #include<fstream>
@@ -80,7 +81,9 @@ int main(int argc, char **argv)
     int fps = 20;
     float dT = 1.f/fps;
     // Create SLAM system. It initializes all system threads and gets ready to process frames.
-    ORB_SLAM3::System SLAM(argv[1],argv[2],ORB_SLAM3::System::MONOCULAR, false);
+    const char* viewer = std::getenv("ORB3_VIEWER");
+    const bool useViewer = !viewer || std::string(viewer) != "0";
+    ORB_SLAM3::System SLAM(argv[1],argv[2],ORB_SLAM3::System::MONOCULAR, useViewer);
     float imageScale = SLAM.GetImageScale();
 
     double t_resize = 0.f;

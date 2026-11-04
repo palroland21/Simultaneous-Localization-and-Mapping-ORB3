@@ -42,6 +42,18 @@ KeyFrame::KeyFrame():
 
 }
 
+KeyFrame* KeyFrame::GetNextKeyFrame()
+{
+    unique_lock<mutex> lock(mMutexConnections);
+    return mNextKF;
+}
+
+void KeyFrame::SetNextKeyFrame(KeyFrame* next)
+{
+    unique_lock<mutex> lock(mMutexConnections);
+    mNextKF = next;
+}
+
 KeyFrame::KeyFrame(Frame &F, Map *pMap, KeyFrameDatabase *pKFDB):
     bImu(pMap->isImuInitialized()), mnFrameId(F.mnId),  mTimeStamp(F.mTimeStamp), mnGridCols(FRAME_GRID_COLS), mnGridRows(FRAME_GRID_ROWS),
     mfGridElementWidthInv(F.mfGridElementWidthInv), mfGridElementHeightInv(F.mfGridElementHeightInv),
@@ -994,7 +1006,7 @@ void KeyFrame::PostLoad(map<long unsigned int, KeyFrame*>& mpKFid, map<long unsi
     }
     if(mBackupNextKFId != -1)
     {
-        mNextKF = mpKFid[mBackupNextKFId];
+        SetNextKeyFrame(mpKFid[mBackupNextKFId]);
     }
     mpImuPreintegrated = &mBackupImuPreintegrated;
 

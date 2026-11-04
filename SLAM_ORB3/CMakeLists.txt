@@ -30,16 +30,16 @@ endif()
 
 LIST(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake_modules)
 
-find_package(OpenCV 4.4)
-   if(NOT OpenCV_FOUND)
-      message(FATAL_ERROR "OpenCV > 4.4 not found.")
-   endif()
+find_package(OpenCV 4.4 REQUIRED COMPONENTS core imgproc imgcodecs highgui videoio calib3d features2d viz)
+message(STATUS "OpenCV config: ${OpenCV_DIR}")
+message(STATUS "OpenCV libraries (including VTK-backed viz): ${OpenCV_LIBS}")
 
 MESSAGE("OPENCV VERSION:")
 MESSAGE(${OpenCV_VERSION})
 
 find_package(Eigen3 3.1.0 REQUIRED)
-find_package(Pangolin REQUIRED)
+# Include Viz's imported dependencies too, so their external CMake targets exist.
+find_package(VTK 9 REQUIRED COMPONENTS CommonCore CommonDataModel FiltersExtraction FiltersSources FiltersTexture IOExport IOGeometry IOPLY InteractionStyle RenderingCore RenderingLOD RenderingOpenGL2)
 find_package(realsense2)
 
 include_directories(
@@ -48,10 +48,14 @@ ${PROJECT_SOURCE_DIR}/include
 ${PROJECT_SOURCE_DIR}/include/CameraModels
 ${PROJECT_SOURCE_DIR}/Thirdparty/Sophus
 ${EIGEN3_INCLUDE_DIR}
-${Pangolin_INCLUDE_DIRS}
+${OpenCV_INCLUDE_DIRS}
 )
 
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/lib)
+
+add_library(orb3_viz_lines STATIC src/VizBatchLines.cc src/VizEventPump.cc src/VizMouseNavigation.cc)
+set_target_properties(orb3_viz_lines PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_link_libraries(orb3_viz_lines PRIVATE opencv_viz VTK::CommonCore VTK::CommonDataModel VTK::RenderingCore)
 
 add_library(${PROJECT_NAME} SHARED
 src/System.cc
@@ -117,8 +121,8 @@ add_subdirectory(Thirdparty/g2o)
 
 target_link_libraries(${PROJECT_NAME}
 ${OpenCV_LIBS}
+orb3_viz_lines
 ${EIGEN3_LIBS}
-${Pangolin_LIBRARIES}
 ${PROJECT_SOURCE_DIR}/Thirdparty/DBoW2/lib/libDBoW2.so
 ${PROJECT_SOURCE_DIR}/Thirdparty/g2o/lib/libg2o.so
 -lboost_serialization

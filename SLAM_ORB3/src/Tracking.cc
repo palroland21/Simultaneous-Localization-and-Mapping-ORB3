@@ -2613,7 +2613,7 @@ void Tracking::CreateInitialMapMonocular()
     if (mSensor == System::IMU_MONOCULAR)
     {
         pKFcur->mPrevKF = pKFini;
-        pKFini->mNextKF = pKFcur;
+        pKFini->SetNextKeyFrame(pKFcur);
         pKFcur->mpImuPreintegrated = mpImuPreintegratedFromLastKF;
 
         mpImuPreintegratedFromLastKF = new IMU::Preintegrated(pKFcur->mpImuPreintegrated->GetUpdatedBias(),pKFcur->mImuCalib);
@@ -3233,7 +3233,7 @@ void Tracking::CreateNewKeyFrame()
     if(mpLastKeyFrame)
     {
         pKF->mPrevKF = mpLastKeyFrame;
-        mpLastKeyFrame->mNextKF = pKF;
+        mpLastKeyFrame->SetNextKeyFrame(pKF);
     }
     else
         Verbose::PrintMess("No last KF in KF creation!!", Verbose::VERBOSITY_NORMAL);

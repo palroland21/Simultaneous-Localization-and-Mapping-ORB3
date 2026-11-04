@@ -16,6 +16,7 @@
 * If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include <cstdlib>
 #include<iostream>
 #include<algorithm>
 #include<fstream>
@@ -88,7 +89,9 @@ int main(int argc, char **argv)
     cout.precision(17);
 
     // Create SLAM system. It initializes all system threads and gets ready to process frames.
-    ORB_SLAM3::System SLAM(argv[1],argv[2],ORB_SLAM3::System::STEREO, true);
+    const char* viewer = std::getenv("ORB3_VIEWER");
+    const bool useViewer = !viewer || std::string(viewer) != "0";
+    ORB_SLAM3::System SLAM(argv[1],argv[2],ORB_SLAM3::System::STEREO, useViewer);
 
     cv::Mat imLeft, imRight;
     for (seq = 0; seq<num_seq; seq++)

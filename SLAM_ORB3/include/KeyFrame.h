@@ -204,6 +204,8 @@ public:
     Sophus::SE3f GetPose();
 
     Sophus::SE3f GetPoseInverse();
+    KeyFrame* GetNextKeyFrame();
+    void SetNextKeyFrame(KeyFrame* next);
     Eigen::Vector3f GetCameraCenter();
 
     Eigen::Vector3f GetImuPosition();

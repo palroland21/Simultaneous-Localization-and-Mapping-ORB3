@@ -106,6 +106,7 @@ public:
     std::vector<MapPoint*> GetReferenceMapPoints();
 
     vector<Map*> GetAllMaps();
+    void GetViewerMaps(Map* &activeMap, std::vector<Map*> &maps);
 
     int CountMaps();
 

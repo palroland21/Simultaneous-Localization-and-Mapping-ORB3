@@ -221,6 +221,13 @@ vector<Map*> Atlas::GetAllMaps()
     return vMaps;
 }
 
+void Atlas::GetViewerMaps(Map* &activeMap, std::vector<Map*> &maps)
+{
+    unique_lock<mutex> lock(mMutexAtlas);
+    activeMap = mpCurrentMap;
+    maps.assign(mspMaps.begin(), mspMaps.end());
+}
+
 int Atlas::CountMaps()
 {
     unique_lock<mutex> lock(mMutexAtlas);

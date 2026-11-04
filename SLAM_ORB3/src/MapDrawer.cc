@@ -17,9 +17,11 @@
 */
 
 #include "MapDrawer.h"
+#include "VizViewerProfile.h"
+#include "VizBatchLines.h"
 #include "MapPoint.h"
 #include "KeyFrame.h"
-#include <pangolin/pangolin.h>
+#include <map>
 #include <mutex>
 
 namespace ORB_SLAM3
@@ -132,336 +134,208 @@ bool MapDrawer::ParseViewerParamFile(cv::FileStorage &fSettings)
     return !b_miss_params;
 }
 
-void MapDrawer::DrawMapPoints()
+namespace
 {
-    Map* pActiveMap = mpAtlas->GetCurrentMap();
-    if(!pActiveMap)
-        return;
-
-    const vector<MapPoint*> &vpMPs = pActiveMap->GetAllMapPoints();
-    const vector<MapPoint*> &vpRefMPs = pActiveMap->GetReferenceMapPoints();
-
-    set<MapPoint*> spRefMPs(vpRefMPs.begin(), vpRefMPs.end());
-
-    if(vpMPs.empty())
-        return;
-
-    glPointSize(mPointSize);
-    glBegin(GL_POINTS);
-    glColor3f(0.0,0.0,0.0);
-
-    for(size_t i=0, iend=vpMPs.size(); i<iend;i++)
+cv::Affine3d ToVizPose(const Sophus::SE3f &pose)
+{
+    const Eigen::Matrix4f matrix = pose.matrix();
+    cv::Matx44d converted;
+    for(int row = 0; row < 4; ++row)
     {
-        if(vpMPs[i]->isBad() || spRefMPs.count(vpMPs[i]))
-            continue;
-        Eigen::Matrix<float,3,1> pos = vpMPs[i]->GetWorldPos();
-        glVertex3f(pos(0),pos(1),pos(2));
+        for(int col = 0; col < 4; ++col)
+            converted(row, col) = matrix(row, col);
     }
-    glEnd();
-
-    glPointSize(mPointSize);
-    glBegin(GL_POINTS);
-    glColor3f(1.0,0.0,0.0);
-
-    for(set<MapPoint*>::iterator sit=spRefMPs.begin(), send=spRefMPs.end(); sit!=send; sit++)
-    {
-        if((*sit)->isBad())
-            continue;
-        Eigen::Matrix<float,3,1> pos = (*sit)->GetWorldPos();
-        glVertex3f(pos(0),pos(1),pos(2));
-
-    }
-
-    glEnd();
+    return cv::Affine3d(converted);
 }
 
-void MapDrawer::DrawKeyFrames(const bool bDrawKF, const bool bDrawGraph, const bool bDrawInertialGraph, const bool bDrawOptLba)
+cv::Point3d CameraCenter(const cv::Affine3d &pose)
 {
-    const float &w = mKeyFrameSize;
-    const float h = w*0.75;
-    const float z = w*0.6;
+    const cv::Vec3d translation = pose.translation();
+    return cv::Point3d(translation[0], translation[1], translation[2]);
+}
 
-    Map* pActiveMap = mpAtlas->GetCurrentMap();
-    // DEBUG LBA
-    std::set<long unsigned int> sOptKFs = pActiveMap->msOptKFs;
-    std::set<long unsigned int> sFixedKFs = pActiveMap->msFixedKFs;
+cv::viz::WPolyLine CameraFrustum(const float width, const cv::viz::Color &color)
+{
+    const float height = width * 0.75f;
+    const float depth = width * 0.6f;
+    const cv::Point3f origin(0, 0, 0), a(width, height, depth), b(width, -height, depth), c(-width, -height, depth), d(-width, height, depth);
+    // Walk the original eight edges; repeated edges introduce no extra geometry.
+    const std::vector<cv::Point3f> vertices = {origin, a, b, origin, c, d, origin, a, d, c, b};
+    return cv::viz::WPolyLine(vertices, color);
+}
 
-    if(!pActiveMap)
-        return;
+struct CameraSnapshot
+{
+    std::string id;
+    cv::Affine3d pose;
+    cv::viz::Color color;
+    float lineWidth;
+};
 
-    const vector<KeyFrame*> vpKFs = pActiveMap->GetAllKeyFrames();
+using Edge = std::pair<cv::Point3d, cv::Point3d>;
+}
 
-    if(bDrawKF)
+void MapDrawer::UpdateViewer(cv::viz::Viz3d &window, const bool drawGraph)
+{
+    static VizViewerProfile profile("map", {"lock_wait", "snapshot", "widgets"});
+    const auto profileBegin = VizViewerProfile::Clock::now();
+    double lockWait = 0;
+    // Current pose stays responsive even when the map snapshot must be skipped.
+    if(!mWidgetIds.count("camera/current"))
     {
-        for(size_t i=0; i<vpKFs.size(); i++)
-        {
-            KeyFrame* pKF = vpKFs[i];
-            Eigen::Matrix4f Twc = pKF->GetPoseInverse().matrix();
-            unsigned int index_color = pKF->mnOriginMapId;
-
-            glPushMatrix();
-
-            glMultMatrixf((GLfloat*)Twc.data());
-
-            if(!pKF->GetParent()) // It is the first KF in the map
-            {
-                glLineWidth(mKeyFrameLineWidth*5);
-                glColor3f(1.0f,0.0f,0.0f);
-                glBegin(GL_LINES);
-            }
-            else
-            {
-                //cout << "Child KF: " << vpKFs[i]->mnId << endl;
-                glLineWidth(mKeyFrameLineWidth);
-                if (bDrawOptLba) {
-                    if(sOptKFs.find(pKF->mnId) != sOptKFs.end())
-                    {
-                        glColor3f(0.0f,1.0f,0.0f); // Green -> Opt KFs
-                    }
-                    else if(sFixedKFs.find(pKF->mnId) != sFixedKFs.end())
-                    {
-                        glColor3f(1.0f,0.0f,0.0f); // Red -> Fixed KFs
-                    }
-                    else
-                    {
-                        glColor3f(0.0f,0.0f,1.0f); // Basic color
-                    }
-                }
-                else
-                {
-                    glColor3f(0.0f,0.0f,1.0f); // Basic color
-                }
-                glBegin(GL_LINES);
-            }
-
-            glVertex3f(0,0,0);
-            glVertex3f(w,h,z);
-            glVertex3f(0,0,0);
-            glVertex3f(w,-h,z);
-            glVertex3f(0,0,0);
-            glVertex3f(-w,-h,z);
-            glVertex3f(0,0,0);
-            glVertex3f(-w,h,z);
-
-            glVertex3f(w,h,z);
-            glVertex3f(w,-h,z);
-
-            glVertex3f(-w,h,z);
-            glVertex3f(-w,-h,z);
-
-            glVertex3f(-w,h,z);
-            glVertex3f(w,h,z);
-
-            glVertex3f(-w,-h,z);
-            glVertex3f(w,-h,z);
-            glEnd();
-
-            glPopMatrix();
-
-            glEnd();
-        }
+        window.showWidget("camera/current", CameraFrustum(mCameraSize, cv::viz::Color::green()), GetCurrentCameraPose());
+        window.setRenderingProperty("camera/current", cv::viz::LINE_WIDTH, mCameraLineWidth);
+        mWidgetIds.insert("camera/current");
     }
-
-    if(bDrawGraph)
+    else
+        window.setWidgetPose("camera/current", GetCurrentCameraPose());
+    std::vector<cv::Point3f> points, referencePoints;
+    std::vector<CameraSnapshot> cameras;
+    std::vector<Edge> graph, inertialGraph;
+    Map* activeMap = nullptr;
+    std::vector<Map*> maps;
+    // Unlike GetCurrentMap(), this read-only accessor never creates a SLAM map.
+    mpAtlas->GetViewerMaps(activeMap, maps);
+    for(Map* map : maps)
     {
-        glLineWidth(mGraphLineWidth);
-        glColor4f(0.0f,1.0f,0.0f,0.6f);
-        glBegin(GL_LINES);
-
-        // cout << "-----------------Draw graph-----------------" << endl;
-        for(size_t i=0; i<vpKFs.size(); i++)
+        // Tracking/optimization use this mutex. Reset also stops the viewer before clearing maps.
+        // In this repository culled maps/keyframes/points are retained until shutdown.
+        const auto lockBegin = VizViewerProfile::Clock::now();
+        std::unique_lock<std::mutex> mapLock(map->mMutexMapUpdate, std::try_to_lock);
+        if(!mapLock.owns_lock())
+            return; // Keep the previous complete scene; never stall image/event processing.
+        lockWait += VizViewerProfile::Milliseconds(lockBegin, VizViewerProfile::Clock::now());
+        const bool active = map == activeMap;
+        if(active)
         {
-            // Covisibility Graph
-            const vector<KeyFrame*> vCovKFs = vpKFs[i]->GetCovisiblesByWeight(100);
-            Eigen::Vector3f Ow = vpKFs[i]->GetCameraCenter();
-            if(!vCovKFs.empty())
+            const std::vector<MapPoint*> reference = map->GetReferenceMapPoints();
+            const std::set<MapPoint*> referenceSet(reference.begin(), reference.end());
+            for(MapPoint* point : map->GetAllMapPoints())
             {
-                for(vector<KeyFrame*>::const_iterator vit=vCovKFs.begin(), vend=vCovKFs.end(); vit!=vend; vit++)
-                {
-                    if((*vit)->mnId<vpKFs[i]->mnId)
-                        continue;
-                    Eigen::Vector3f Ow2 = (*vit)->GetCameraCenter();
-                    glVertex3f(Ow(0),Ow(1),Ow(2));
-                    glVertex3f(Ow2(0),Ow2(1),Ow2(2));
-                }
-            }
-
-            // Spanning tree
-            KeyFrame* pParent = vpKFs[i]->GetParent();
-            if(pParent)
-            {
-                Eigen::Vector3f Owp = pParent->GetCameraCenter();
-                glVertex3f(Ow(0),Ow(1),Ow(2));
-                glVertex3f(Owp(0),Owp(1),Owp(2));
-            }
-
-            // Loops
-            set<KeyFrame*> sLoopKFs = vpKFs[i]->GetLoopEdges();
-            for(set<KeyFrame*>::iterator sit=sLoopKFs.begin(), send=sLoopKFs.end(); sit!=send; sit++)
-            {
-                if((*sit)->mnId<vpKFs[i]->mnId)
+                if(!point || point->isBad() || referenceSet.count(point))
                     continue;
-                Eigen::Vector3f Owl = (*sit)->GetCameraCenter();
-                glVertex3f(Ow(0),Ow(1),Ow(2));
-                glVertex3f(Owl(0),Owl(1),Owl(2));
+                const Eigen::Vector3f position = point->GetWorldPos();
+                if(!position.allFinite())
+                    continue;
+                points.emplace_back(position.x(), position.y(), position.z());
             }
-        }
-
-        glEnd();
-    }
-
-    if(bDrawInertialGraph && pActiveMap->isImuInitialized())
-    {
-        glLineWidth(mGraphLineWidth);
-        glColor4f(1.0f,0.0f,0.0f,0.6f);
-        glBegin(GL_LINES);
-
-        //Draw inertial links
-        for(size_t i=0; i<vpKFs.size(); i++)
-        {
-            KeyFrame* pKFi = vpKFs[i];
-            Eigen::Vector3f Ow = pKFi->GetCameraCenter();
-            KeyFrame* pNext = pKFi->mNextKF;
-            if(pNext)
+            // The original viewer drew the reference set independently of GetAllMapPoints().
+            // Keep that exact selection, including references temporarily outside the map set.
+            for(MapPoint* point : referenceSet)
             {
-                Eigen::Vector3f Owp = pNext->GetCameraCenter();
-                glVertex3f(Ow(0),Ow(1),Ow(2));
-                glVertex3f(Owp(0),Owp(1),Owp(2));
+                if(!point || point->isBad())
+                    continue;
+                const Eigen::Vector3f position = point->GetWorldPos();
+                if(position.allFinite())
+                    referencePoints.emplace_back(position.x(), position.y(), position.z());
             }
         }
 
-        glEnd();
-    }
-
-    vector<Map*> vpMaps = mpAtlas->GetAllMaps();
-
-    if(bDrawKF)
-    {
-        for(Map* pMap : vpMaps)
+        std::vector<KeyFrame*> keyframes = map->GetAllKeyFrames();
+        std::map<KeyFrame*, cv::Affine3d> poses;
+        for(KeyFrame* keyframe : keyframes)
         {
-            if(pMap == pActiveMap)
+            if(!keyframe || keyframe->isBad())
                 continue;
+            const cv::Affine3d pose = ToVizPose(keyframe->GetPoseInverse());
+            poses.emplace(keyframe, pose);
+            const bool root = keyframe->GetParent() == nullptr;
+            const unsigned int colorIndex = keyframe->mnOriginMapId % 6;
+            const cv::viz::Color color = root ? cv::viz::Color::red() : (active ? cv::viz::Color::blue() : cv::viz::Color(255 * mfFrameColors[colorIndex][2], 255 * mfFrameColors[colorIndex][1], 255 * mfFrameColors[colorIndex][0]));
+            cameras.push_back({"keyframe/" + std::to_string(keyframe->mnId), pose, color, root ? mKeyFrameLineWidth * 5 : mKeyFrameLineWidth});
+        }
 
-            vector<KeyFrame*> vpKFs = pMap->GetAllKeyFrames();
-
-            for(size_t i=0; i<vpKFs.size(); i++)
+        if(!active)
+            continue;
+        for(const auto &entry : poses)
+        {
+            KeyFrame* keyframe = entry.first;
+            const cv::Point3d center = CameraCenter(entry.second);
+            if(drawGraph)
             {
-                KeyFrame* pKF = vpKFs[i];
-                Eigen::Matrix4f Twc = pKF->GetPoseInverse().matrix();
-                unsigned int index_color = pKF->mnOriginMapId;
-
-                glPushMatrix();
-
-                glMultMatrixf((GLfloat*)Twc.data());
-
-                if(!vpKFs[i]->GetParent()) // It is the first KF in the map
+                for(KeyFrame* neighbor : keyframe->GetCovisiblesByWeight(100))
                 {
-                    glLineWidth(mKeyFrameLineWidth*5);
-                    glColor3f(1.0f,0.0f,0.0f);
-                    glBegin(GL_LINES);
+                    const auto found = poses.find(neighbor);
+                    if(found != poses.end() && neighbor->mnId > keyframe->mnId)
+                        graph.emplace_back(center, CameraCenter(found->second));
                 }
-                else
+                const auto parent = poses.find(keyframe->GetParent());
+                if(parent != poses.end())
+                    graph.emplace_back(center, CameraCenter(parent->second));
+                for(KeyFrame* neighbor : keyframe->GetLoopEdges())
                 {
-                    glLineWidth(mKeyFrameLineWidth);
-                    glColor3f(mfFrameColors[index_color][0],mfFrameColors[index_color][1],mfFrameColors[index_color][2]);
-                    glBegin(GL_LINES);
+                    const auto found = poses.find(neighbor);
+                    if(found != poses.end() && neighbor->mnId > keyframe->mnId)
+                        graph.emplace_back(center, CameraCenter(found->second));
                 }
-
-                glVertex3f(0,0,0);
-                glVertex3f(w,h,z);
-                glVertex3f(0,0,0);
-                glVertex3f(w,-h,z);
-                glVertex3f(0,0,0);
-                glVertex3f(-w,-h,z);
-                glVertex3f(0,0,0);
-                glVertex3f(-w,h,z);
-
-                glVertex3f(w,h,z);
-                glVertex3f(w,-h,z);
-
-                glVertex3f(-w,h,z);
-                glVertex3f(-w,-h,z);
-
-                glVertex3f(-w,h,z);
-                glVertex3f(w,h,z);
-
-                glVertex3f(-w,-h,z);
-                glVertex3f(w,-h,z);
-                glEnd();
-
-                glPopMatrix();
+            }
+        }
+        if(map->isImuInitialized())
+        {
+            // Read the existing IMU links through the synchronized accessor.
+            for(const auto &entry : poses)
+            {
+                const auto next = poses.find(entry.first->GetNextKeyFrame());
+                if(next != poses.end())
+                    inertialGraph.emplace_back(CameraCenter(entry.second), CameraCenter(next->second));
             }
         }
     }
+
+    const auto snapshotEnd = VizViewerProfile::Clock::now();
+    // All VTK work happens after releasing SLAM locks. Only value copies reach Viz.
+    std::set<std::string> visible;
+    const auto showCloud = [&](const std::string &id, const std::vector<cv::Point3f> &cloud, const cv::viz::Color &color)
+    {
+        if(cloud.empty())
+            return;
+        window.showWidget(id, cv::viz::WCloud(cloud, color));
+        window.setRenderingProperty(id, cv::viz::POINT_SIZE, mPointSize);
+        visible.insert(id);
+    };
+    showCloud("map/points", points, cv::viz::Color::black());
+    showCloud("map/reference_points", referencePoints, cv::viz::Color::red());
+    for(const CameraSnapshot &camera : cameras)
+    {
+        if(!mWidgetIds.count(camera.id))
+            window.showWidget(camera.id, CameraFrustum(mKeyFrameSize, camera.color), camera.pose);
+        else
+            window.setWidgetPose(camera.id, camera.pose);
+        // A map can become inactive after relocalization, changing its camera color.
+        window.getWidget(camera.id).cast<cv::viz::Widget3D>().setColor(camera.color);
+        window.setRenderingProperty(camera.id, cv::viz::LINE_WIDTH, camera.lineWidth);
+        visible.insert(camera.id);
+    }
+    const auto showEdges = [&](const std::string &id, const std::vector<Edge> &edges, const cv::viz::Color &color)
+    {
+        if(edges.empty())
+            return;
+        UpdateVizBatchLines(window, id, edges, color, mGraphLineWidth, mWidgetIds.count(id) != 0);
+        visible.insert(id);
+    };
+    showEdges("map/graph", graph, cv::viz::Color::green());
+    showEdges("map/inertial_graph", inertialGraph, cv::viz::Color::red());
+    visible.insert("camera/current");
+    for(const std::string &id : mWidgetIds)
+    {
+        if(!visible.count(id))
+            window.removeWidget(id);
+    }
+    mWidgetIds.swap(visible);
+    profile.Add({lockWait, VizViewerProfile::Milliseconds(profileBegin, snapshotEnd), VizViewerProfile::Milliseconds(snapshotEnd, VizViewerProfile::Clock::now())});
 }
-
-void MapDrawer::DrawCurrentCamera(pangolin::OpenGlMatrix &Twc)
-{
-    const float &w = mCameraSize;
-    const float h = w*0.75;
-    const float z = w*0.6;
-
-    glPushMatrix();
-
-#ifdef HAVE_GLES
-        glMultMatrixf(Twc.m);
-#else
-        glMultMatrixd(Twc.m);
-#endif
-
-    glLineWidth(mCameraLineWidth);
-    glColor3f(0.0f,1.0f,0.0f);
-    glBegin(GL_LINES);
-    glVertex3f(0,0,0);
-    glVertex3f(w,h,z);
-    glVertex3f(0,0,0);
-    glVertex3f(w,-h,z);
-    glVertex3f(0,0,0);
-    glVertex3f(-w,-h,z);
-    glVertex3f(0,0,0);
-    glVertex3f(-w,h,z);
-
-    glVertex3f(w,h,z);
-    glVertex3f(w,-h,z);
-
-    glVertex3f(-w,h,z);
-    glVertex3f(-w,-h,z);
-
-    glVertex3f(-w,h,z);
-    glVertex3f(w,h,z);
-
-    glVertex3f(-w,-h,z);
-    glVertex3f(w,-h,z);
-    glEnd();
-
-    glPopMatrix();
-}
-
 
 void MapDrawer::SetCurrentCameraPose(const Sophus::SE3f &Tcw)
 {
-    unique_lock<mutex> lock(mMutexCamera);
+    std::unique_lock<std::mutex> lock(mMutexCamera);
+    // Tracking supplies world-to-camera; widgets need camera-to-world, exactly once.
     mCameraPose = Tcw.inverse();
 }
 
-void MapDrawer::GetCurrentOpenGLCameraMatrix(pangolin::OpenGlMatrix &M, pangolin::OpenGlMatrix &MOw)
+cv::Affine3d MapDrawer::GetCurrentCameraPose()
 {
-    Eigen::Matrix4f Twc;
-    {
-        unique_lock<mutex> lock(mMutexCamera);
-        Twc = mCameraPose.matrix();
-    }
-
-    for (int i = 0; i<4; i++) {
-        M.m[4*i] = Twc(0,i);
-        M.m[4*i+1] = Twc(1,i);
-        M.m[4*i+2] = Twc(2,i);
-        M.m[4*i+3] = Twc(3,i);
-    }
-
-    MOw.SetIdentity();
-    MOw.m[12] = Twc(0,3);
-    MOw.m[13] = Twc(1,3);
-    MOw.m[14] = Twc(2,3);
+    std::unique_lock<std::mutex> lock(mMutexCamera);
+    return ToVizPose(mCameraPose);
 }
-} //namespace ORB_SLAM
+
+} // namespace ORB_SLAM3

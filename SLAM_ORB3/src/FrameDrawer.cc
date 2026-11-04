@@ -204,125 +204,45 @@ cv::Mat FrameDrawer::DrawFrame(float imageScale)
 cv::Mat FrameDrawer::DrawRightFrame(float imageScale)
 {
     cv::Mat im;
-    vector<cv::KeyPoint> vIniKeys; // Initialization: KeyPoints in reference frame
-    vector<int> vMatches; // Initialization: correspondeces with reference keypoints
-    vector<cv::KeyPoint> vCurrentKeys; // KeyPoints in current frame
-    vector<bool> vbVO, vbMap; // Tracked MapPoints in current frame
-    int state; // Tracking state
-
-    //Copy variables within scoped mutex
+    vector<cv::KeyPoint> keys;
+    vector<bool> trackedMap, trackedVO;
+    int state;
+    size_t flagOffset = 0;
     {
         unique_lock<mutex> lock(mMutex);
-        state=mState;
-        if(mState==Tracking::SYSTEM_NOT_READY)
-            mState=Tracking::NO_IMAGES_YET;
-
+        state = mState;
         mImRight.copyTo(im);
-
-        if(mState==Tracking::NOT_INITIALIZED)
-        {
-            vCurrentKeys = mvCurrentKeysRight;
-            vIniKeys = mvIniKeys;
-            vMatches = mvIniMatches;
-        }
-        else if(mState==Tracking::OK)
-        {
-            vCurrentKeys = mvCurrentKeysRight;
-            vbVO = mvbVO;
-            vbMap = mvbMap;
-        }
-        else if(mState==Tracking::LOST)
-        {
-            vCurrentKeys = mvCurrentKeysRight;
-        }
-    } // destroy scoped mutex -> release mutex
-
+        keys = mvCurrentKeysRight;
+        trackedMap = mvbMap;
+        trackedVO = mvbVO;
+        if(state == Tracking::OK && mCurrentFrame.Nleft != -1)
+            flagOffset = mvCurrentKeys.size();
+    }
     if(imageScale != 1.f)
+        cv::resize(im, im, cv::Size(im.cols / imageScale, im.rows / imageScale));
+    if(im.channels() < 3)
+        cv::cvtColor(im, im, cv::COLOR_GRAY2BGR);
+    if(state == Tracking::OK)
     {
-        int imWidth = im.cols / imageScale;
-        int imHeight = im.rows / imageScale;
-        cv::resize(im, im, cv::Size(imWidth, imHeight));
-    }
-
-    if(im.channels()<3) //this should be always true
-        cvtColor(im,im,cv::COLOR_GRAY2BGR);
-
-    //Draw
-    if(state==Tracking::NOT_INITIALIZED) //INITIALIZING
-    {
-        for(unsigned int i=0; i<vMatches.size(); i++)
+        mnTracked = 0;
+        mnTrackedVO = 0;
+        for(size_t i = 0; i < keys.size(); ++i)
         {
-            if(vMatches[i]>=0)
-            {
-                cv::Point2f pt1,pt2;
-                if(imageScale != 1.f)
-                {
-                    pt1 = vIniKeys[i].pt / imageScale;
-                    pt2 = vCurrentKeys[vMatches[i]].pt / imageScale;
-                }
-                else
-                {
-                    pt1 = vIniKeys[i].pt;
-                    pt2 = vCurrentKeys[vMatches[i]].pt;
-                }
-
-                cv::line(im,pt1,pt2,cv::Scalar(0,255,0));
-            }
+            const size_t index = i + flagOffset;
+            if(index >= trackedMap.size() || index >= trackedVO.size() || keys[i].pt.x < 0.f || (!trackedMap[index] && !trackedVO[index]))
+                continue;
+            const cv::Point2f point = keys[i].pt / imageScale;
+            const cv::Scalar color = trackedMap[index] ? cv::Scalar(0,255,0) : cv::Scalar(255,0,0);
+            cv::rectangle(im, point - cv::Point2f(5,5), point + cv::Point2f(5,5), color);
+            cv::circle(im, point, 2, color, -1);
+            if(trackedMap[index])
+                ++mnTracked;
+            else
+                ++mnTrackedVO;
         }
     }
-    else if(state==Tracking::OK) //TRACKING
-    {
-        mnTracked=0;
-        mnTrackedVO=0;
-        const float r = 5;
-        const int n = mvCurrentKeysRight.size();
-        const int Nleft = mvCurrentKeys.size();
-
-        for(int i=0;i<n;i++)
-        {
-            if(vbVO[i + Nleft] || vbMap[i + Nleft])
-            {
-                cv::Point2f pt1,pt2;
-                cv::Point2f point;
-                if(imageScale != 1.f)
-                {
-                    point = mvCurrentKeysRight[i].pt / imageScale;
-                    float px = mvCurrentKeysRight[i].pt.x / imageScale;
-                    float py = mvCurrentKeysRight[i].pt.y / imageScale;
-                    pt1.x=px-r;
-                    pt1.y=py-r;
-                    pt2.x=px+r;
-                    pt2.y=py+r;
-                }
-                else
-                {
-                    point = mvCurrentKeysRight[i].pt;
-                    pt1.x=mvCurrentKeysRight[i].pt.x-r;
-                    pt1.y=mvCurrentKeysRight[i].pt.y-r;
-                    pt2.x=mvCurrentKeysRight[i].pt.x+r;
-                    pt2.y=mvCurrentKeysRight[i].pt.y+r;
-                }
-
-                // This is a match to a MapPoint in the map
-                if(vbMap[i + Nleft])
-                {
-                    cv::rectangle(im,pt1,pt2,cv::Scalar(0,255,0));
-                    cv::circle(im,point,2,cv::Scalar(0,255,0),-1);
-                    mnTracked++;
-                }
-                else // This is match to a "visual odometry" MapPoint created in the last frame
-                {
-                    cv::rectangle(im,pt1,pt2,cv::Scalar(255,0,0));
-                    cv::circle(im,point,2,cv::Scalar(255,0,0),-1);
-                    mnTrackedVO++;
-                }
-            }
-        }
-    }
-
     cv::Mat imWithInfo;
-    DrawTextInfo(im,state, imWithInfo);
-
+    DrawTextInfo(im, state, imWithInfo);
     return imWithInfo;
 }
 
@@ -376,9 +296,21 @@ void FrameDrawer::Update(Tracking *pTracker)
     mvCurrentDepth = pTracker->mCurrentFrame.mvDepth;
 
     if(both){
-        mvCurrentKeysRight = pTracker->mCurrentFrame.mvKeysRight;
         pTracker->mImRight.copyTo(mImRight);
-        N = mvCurrentKeys.size() + mvCurrentKeysRight.size();
+        if(pTracker->mCurrentFrame.Nleft == -1)
+        {
+            // Rectified stereo stores map associations by left feature, not by right detector index.
+            mvCurrentKeysRight = mvCurrentKeys;
+            const vector<float>& rightX = pTracker->mCurrentFrame.mvuRight;
+            for(size_t i = 0; i < mvCurrentKeysRight.size(); ++i)
+                mvCurrentKeysRight[i].pt.x = i < rightX.size() ? rightX[i] : -1.f;
+            N = mvCurrentKeys.size();
+        }
+        else
+        {
+            mvCurrentKeysRight = pTracker->mCurrentFrame.mvKeysRight;
+            N = mvCurrentKeys.size() + mvCurrentKeysRight.size();
+        }
     }
     else{
         N = mvCurrentKeys.size();
@@ -412,6 +344,9 @@ void FrameDrawer::Update(Tracking *pTracker)
     {
         for(int i=0;i<N;i++)
         {
+            if(static_cast<size_t>(i) >= pTracker->mCurrentFrame.mvpMapPoints.size() || static_cast<size_t>(i) >= pTracker->mCurrentFrame.mvbOutlier.size())
+                break;
+            const cv::KeyPoint& key = static_cast<size_t>(i) < mvCurrentKeys.size() ? mvCurrentKeys[i] : mvCurrentKeysRight[i - mvCurrentKeys.size()];
             MapPoint* pMP = pTracker->mCurrentFrame.mvpMapPoints[i];
             if(pMP)
             {
@@ -422,12 +357,12 @@ void FrameDrawer::Update(Tracking *pTracker)
                     else
                         mvbVO[i]=true;
 
-                    mmMatchedInImage[pMP->mnId] = mvCurrentKeys[i].pt;
+                    mmMatchedInImage[pMP->mnId] = key.pt;
                 }
                 else
                 {
                     mvpOutlierMPs.push_back(pMP);
-                    mvOutlierKeys.push_back(mvCurrentKeys[i]);
+                    mvOutlierKeys.push_back(key);
                 }
             }
         }

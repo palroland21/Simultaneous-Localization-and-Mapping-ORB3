@@ -24,7 +24,7 @@
 #include"MapPoint.h"
 #include"KeyFrame.h"
 #include "Settings.h"
-#include<pangolin/pangolin.h>
+#include <opencv2/viz.hpp>
 
 #include<mutex>
 
@@ -43,12 +43,10 @@ public:
 
     Atlas* mpAtlas;
 
-    void DrawMapPoints();
-    void DrawKeyFrames(const bool bDrawKF, const bool bDrawGraph, const bool bDrawInertialGraph, const bool bDrawOptLba);
-    void DrawCurrentCamera(pangolin::OpenGlMatrix &Twc);
+    // Copy SLAM data under its locks, then update widgets without holding map locks.
+    void UpdateViewer(cv::viz::Viz3d &window, const bool drawGraph);
     void SetCurrentCameraPose(const Sophus::SE3f &Tcw);
-    void SetReferenceKeyFrame(KeyFrame *pKF);
-    void GetCurrentOpenGLCameraMatrix(pangolin::OpenGlMatrix &M, pangolin::OpenGlMatrix &MOw);
+    cv::Affine3d GetCurrentCameraPose();
 
 private:
 
@@ -64,6 +62,7 @@ private:
     Sophus::SE3f mCameraPose;
 
     std::mutex mMutexCamera;
+    std::set<std::string> mWidgetIds;
 
     float mfFrameColors[6][3] = {{0.0f, 0.0f, 1.0f},
                                 {0.8f, 0.4f, 1.0f},

@@ -1025,8 +1025,8 @@ void LocalMapping::KeyFrameCulling()
                     {
                         pKF->mNextKF->mpImuPreintegrated->MergePrevious(pKF->mpImuPreintegrated);
                         pKF->mNextKF->mPrevKF = pKF->mPrevKF;
-                        pKF->mPrevKF->mNextKF = pKF->mNextKF;
-                        pKF->mNextKF = NULL;
+                        pKF->mPrevKF->SetNextKeyFrame(pKF->mNextKF);
+                        pKF->SetNextKeyFrame(NULL);
                         pKF->mPrevKF = NULL;
                         pKF->SetBadFlag();
                     }
@@ -1034,8 +1034,8 @@ void LocalMapping::KeyFrameCulling()
                     {
                         pKF->mNextKF->mpImuPreintegrated->MergePrevious(pKF->mpImuPreintegrated);
                         pKF->mNextKF->mPrevKF = pKF->mPrevKF;
-                        pKF->mPrevKF->mNextKF = pKF->mNextKF;
-                        pKF->mNextKF = NULL;
+                        pKF->mPrevKF->SetNextKeyFrame(pKF->mNextKF);
+                        pKF->SetNextKeyFrame(NULL);
                         pKF->mPrevKF = NULL;
                         pKF->SetBadFlag();
                     }

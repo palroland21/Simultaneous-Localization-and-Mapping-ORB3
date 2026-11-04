@@ -21,7 +21,6 @@
 #include "System.h"
 #include "Converter.h"
 #include <thread>
-#include <pangolin/pangolin.h>
 #include <iomanip>
 #include <openssl/md5.h>
 #include <boost/serialization/base_object.hpp>
@@ -230,10 +229,11 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
     //if(false) // TODO
     {
         mpViewer = new Viewer(this, mpFrameDrawer,mpMapDrawer,mpTracker,strSettingsFile,settings_);
-        mptViewer = new thread(&Viewer::Run, mpViewer);
         mpTracker->SetViewer(mpViewer);
         mpLoopCloser->mpViewer = mpViewer;
+        mpFrameDrawer->both = mSensor == STEREO || mSensor == IMU_STEREO;
         mpViewer->both = mpFrameDrawer->both;
+        mptViewer = new thread(&Viewer::Run, mpViewer);
     }
 
     // Fix verbosity
@@ -521,32 +521,15 @@ void System::Shutdown()
 
     cout << "Shutdown" << endl;
 
+    if(mpViewer)
+        mpViewer->RequestFinish();
     mpLocalMapper->RequestFinish();
     mpLoopCloser->RequestFinish();
     // The final trajectory and evaluation must use completed optimizations.
     while(!mpLocalMapper->isFinished() || !mpLoopCloser->isFinished() || mpLoopCloser->isRunningGBA())
         usleep(5000);
-    /*if(mpViewer)
-    {
-        mpViewer->RequestFinish();
-        while(!mpViewer->isFinished())
-            usleep(5000);
-    }*/
-
-    // Wait until all thread have effectively stopped
-    /*while(!mpLocalMapper->isFinished() || !mpLoopCloser->isFinished() || mpLoopCloser->isRunningGBA())
-    {
-        if(!mpLocalMapper->isFinished())
-            cout << "mpLocalMapper is not finished" << endl;*/
-        /*if(!mpLoopCloser->isFinished())
-            cout << "mpLoopCloser is not finished" << endl;
-        if(mpLoopCloser->isRunningGBA()){
-            cout << "mpLoopCloser is running GBA" << endl;
-            cout << "break anyway..." << endl;
-            break;
-        }*/
-        /*usleep(5000);
-    }*/
+    if(mpViewer && mptViewer->joinable())
+        mptViewer->join();
 
     if(!mStrSaveAtlasToFile.empty())
     {
@@ -554,8 +537,6 @@ void System::Shutdown()
         SaveAtlas(FileType::BINARY_FILE);
     }
 
-    /*if(mpViewer)
-        pangolin::BindToContext("ORB-SLAM2: Map Viewer");*/
 
 #ifdef REGISTER_TIMES
     mpTracker->PrintTimeStats();

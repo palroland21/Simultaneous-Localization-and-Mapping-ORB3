@@ -1,39 +1,113 @@
 #!/usr/bin/env bash
-# Official ORB-SLAM3 (EuRoC stereo + IMU), without ROS.
+# ORB-SLAM3 EuRoC launcher: monocular/stereo, with or without IMU, without ROS.
 # Place this script in ~/SLAM_Project/ORB3_PROJECT/orb3.
-# Run: cd ~/SLAM_Project/ORB3_PROJECT && ./orb3 MH_01_easy
+# Run: ./orb3 (interactive), or ./orb3 MH_01_easy (Stereo + IMU).
 set -Eeuo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/SLAM_ORB3"
 PROJECT="$(dirname "$ROOT")"
 DATASETS="${ORB3_DATASETS:-$HOME/SLAM_Project/datasets/euroc}"
 ARG="${1:-}"
-if [[ -z "$ARG" || "$ARG" == --help || "$ARG" == -h ]]; then
-  echo "Available datasets:"
-  declare -A seen=()
-  found=0
+MODE_LABELS=("Monocular (one camera)" "Stereo (two cameras)" "Monocular + IMU" "Stereo + IMU")
+MODE_TARGETS=(mono_euroc stereo_euroc mono_inertial_euroc stereo_inertial_euroc)
+MODE_DIRS=(Monocular Stereo Monocular-Inertial Stereo-Inertial)
+MODE_INDEX=3
+NEED_RIGHT=1
+NEED_IMU=1
 
-  for entry in "$DATASETS"/*; do
-    if [[ -f "$entry" && "$entry" == *.bag ]]; then
-      name="${entry##*/}"
-      name="${name%.bag}"
-    elif [[ -d "$entry/mav0/cam0/data" && -d "$entry/mav0/cam1/data" && -f "$entry/mav0/imu0/data.csv" ]]; then
-      name="${entry##*/}"
-    else
-      continue
+choose_option() {
+  local title="$1" answer index
+  shift
+  local options=("$@")
+  printf '\n%s\n\n' "$title"
+  for index in "${!options[@]}"; do
+    printf '  %d. %s\n' "$((index + 1))" "${options[$index]}"
+  done
+  printf '  0. Exit\n\n'
+  while true; do
+    printf 'Choose an option (1-%d), or 0 to exit, then press Enter: ' "${#options[@]}"
+    if ! IFS= read -r answer; then
+      printf '\nInput closed. Exiting.\n'
+      exit 0
     fi
+    [[ -z "$answer" ]] && continue
+    case "$answer" in
+      0|q|Q) exit 0 ;;
+    esac
+    if [[ "$answer" =~ ^[1-9][0-9]{0,5}$ ]] && (( 10#$answer <= ${#options[@]} )); then
+      MENU_CHOICE=$((10#$answer - 1))
+      printf 'Selected: %s. %s\n' "$answer" "${options[$MENU_CHOICE]}"
+      return
+    fi
+    printf 'Invalid choice. Please select one of the listed options.\n'
+  done
+}
 
-    if [[ -z "${seen[$name]+x}" ]]; then
+find_bag() {
+  local directory="$1" name="$2" candidate
+  FOUND_BAG=""
+  if [[ -f "$directory/$name.bag" ]]; then
+    FOUND_BAG="$directory/$name.bag"
+  elif [[ -f "$DATASETS/$name.bag" ]]; then
+    FOUND_BAG="$DATASETS/$name.bag"
+  else
+    for candidate in "$directory"/*.bag; do
+      [[ -f "$candidate" ]] || continue
+      FOUND_BAG="$candidate"
+      break
+    done
+  fi
+  [[ -n "$FOUND_BAG" ]]
+}
+
+dataset_ready() {
+  local directory="$1"
+  compgen -G "$directory/mav0/cam0/data/*.png" >/dev/null || return 1
+  if (( NEED_RIGHT )); then
+    compgen -G "$directory/mav0/cam1/data/*.png" >/dev/null || return 1
+  fi
+  if (( NEED_IMU )); then
+    [[ -s "$directory/mav0/imu0/data.csv" ]] || return 1
+  fi
+}
+
+discover_datasets() {
+  local entry name
+  local -A seen=()
+  DATASET_NAMES=()
+  DATASET_PATHS=()
+  # Prefer extracted directories over root-level bags with the same name.
+  for entry in "$DATASETS"/*; do
+    [[ -d "$entry" ]] || continue
+    name="${entry##*/}"
+    if dataset_ready "$entry" || find_bag "$entry" "$name"; then
+      DATASET_NAMES+=("$name")
+      DATASET_PATHS+=("$entry")
       seen["$name"]=1
-      printf '  ./orb3 %s\n' "$name"
-      found=1
     fi
   done
+  for entry in "$DATASETS"/*.bag; do
+    [[ -f "$entry" ]] || continue
+    name="${entry##*/}"
+    name="${name%.bag}"
+    [[ -z "${seen[$name]+x}" ]] || continue
+    DATASET_NAMES+=("$name")
+    DATASET_PATHS+=("$entry")
+    seen["$name"]=1
+  done
+}
 
-  if (( found == 0 )); then
-    echo "  No datasets found in $DATASETS"
+if [[ "$ARG" == --help || "$ARG" == -h ]]; then
+  printf 'Usage: ./orb3 [dataset_name | sequence_directory | bag_file]\n\n'
+  printf 'Run ./orb3 without arguments to build and choose a mode and dataset.\n'
+  printf 'A dataset argument starts Stereo + IMU directly, as before.\n'
+  printf '\nAvailable EuRoC datasets in %s:\n' "$DATASETS"
+  discover_datasets
+  if (( ${#DATASET_NAMES[@]} )); then
+    printf '  %s\n' "${DATASET_NAMES[@]}"
+  else
+    printf '  No compatible datasets found.\n'
   fi
-
   exit 0
 fi
 
@@ -50,102 +124,93 @@ for cmd in cmake g++ make git python3 tar; do
   fi
 done
 
-if [[ -d "$ARG/mav0" ]]; then
-  SEQ="$(cd "$ARG" && pwd)"
-  NAME="$(basename "$SEQ")"
-  BAG=""
-else
-  NAME="$(basename "$ARG")"
-  NAME="${NAME%.bag}"
-  SEQ="$DATASETS/$NAME"
-  if [[ "$ARG" == *.bag && -f "$ARG" ]]; then
-    BAG="$(cd "$(dirname "$ARG")" && pwd)/$(basename "$ARG")"
-  else
-    BAG="$DATASETS/$NAME.bag"
-  fi
+# CMake requires OpenCV Viz and verifies it in the OpenCV installation selected here.
+OPENCV_ARGS=()
+if [[ -n "${ORB3_OPENCV_DIR:-}" ]]; then
+  OPENCV_ARGS=("-DOpenCV_DIR=$ORB3_OPENCV_DIR")
 fi
 
-# Pangolin is required to build the official sources and enable the viewer.
-# CMake will detect an existing system installation.
-PANGO_ARGS=()
-PANGO_DIR=""
-for maybe in /usr/local/lib/cmake/Pangolin /usr/lib/x86_64-linux-gnu/cmake/Pangolin; do
-  if [[ -f "$maybe/PangolinConfig.cmake" ]]; then
-    PANGO_DIR="$maybe"
-    break
-  fi
-done
-
-if [[ -z "$PANGO_DIR" ]]; then
-  PANGO_SRC="$ROOT/.orb3_deps/Pangolin"
-  PANGO_BUILD="$PANGO_SRC/build"
-  if [[ ! -d "$PANGO_SRC/.git" ]]; then
-    echo "[ORB3] Pangolin is not installed; cloning v0.9.2 locally for the viewer."
-    mkdir -p "$ROOT/.orb3_deps"
-    git clone --depth 1 --branch v0.9.2 https://github.com/stevenlovegrove/Pangolin.git "$PANGO_SRC"
-  fi
-  if [[ ! -f "$PANGO_BUILD/CMakeCache.txt" ]]; then
-    echo "[ORB3] Configuring Pangolin ..."
-    cmake -S "$PANGO_SRC" -B "$PANGO_BUILD" \
-      -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
-      -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DBUILD_TOOLS=OFF \
-      -DBUILD_PANGOLIN_PYTHON=OFF
-  fi
-  echo "[ORB3] Checking/building Pangolin ..."
-  cmake --build "$PANGO_BUILD" --parallel "${ORB3_JOBS:-2}"
-  PANGO_DIR="$(find "$PANGO_BUILD" -name PangolinConfig.cmake -printf '%h\n' -quit)"
-  if [[ -z "$PANGO_DIR" ]]; then
-    echo "ERROR: Pangolin was built, but PangolinConfig.cmake was not found." >&2
-    exit 1
-  fi
-fi
-PANGO_ARGS=("-DPangolin_DIR=$PANGO_DIR")
-
-# The official EuRoC example disables Pangolin by passing 'false'.
-# The only automated ORB-SLAM3 source change is enabling the viewer.
-DEMO_SRC="$ROOT/Examples/Stereo-Inertial/stereo_inertial_euroc.cc"
-if grep -q 'ORB_SLAM3::System::IMU_STEREO, false)' "$DEMO_SRC"; then
-  echo "[ORB3] Enabling the 3D viewer in the EuRoC example."
-  sed -i 's/ORB_SLAM3::System::IMU_STEREO, false)/ORB_SLAM3::System::IMU_STEREO, true)/' "$DEMO_SRC"
-fi
-
-BIN="$ROOT/Examples/Stereo-Inertial/stereo_inertial_euroc"
-if [[ ! -x "$BIN" ]]; then
-  echo "[ORB3] First run: building ORB-SLAM3."
-  for lib in DBoW2 g2o; do
+for lib in DBoW2 g2o; do
+  if [[ ! -s "$ROOT/Thirdparty/$lib/lib/lib$lib.so" ]]; then
     echo "[ORB3] Building Thirdparty/$lib ..."
     cmake -S "$ROOT/Thirdparty/$lib" -B "$ROOT/Thirdparty/$lib/build" -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5
     cmake --build "$ROOT/Thirdparty/$lib/build" --parallel "${ORB3_JOBS:-2}"
-  done
-
-  if [[ ! -s "$ROOT/Vocabulary/ORBvoc.txt" ]]; then
-    echo "[ORB3] Extracting the ORB vocabulary ..."
-    tar -xf "$ROOT/Vocabulary/ORBvoc.txt.tar.gz" -C "$ROOT/Vocabulary"
   fi
-  cmake -S "$ROOT" -B "$ROOT/build" -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 "${PANGO_ARGS[@]}"
-  cmake --build "$ROOT/build" --target stereo_inertial_euroc --parallel "${ORB3_JOBS:-2}"
-else
-  # Rebuild incrementally if the viewer example has just been modified.
-  if [[ "$DEMO_SRC" -nt "$BIN" ]]; then
-    echo "[ORB3] Rebuilding the executable after enabling the viewer ..."
-    cmake -S "$ROOT" -B "$ROOT/build" -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 "${PANGO_ARGS[@]}"
-    cmake --build "$ROOT/build" --target stereo_inertial_euroc --parallel "${ORB3_JOBS:-2}"
-  fi
+done
+if [[ ! -s "$ROOT/Vocabulary/ORBvoc.txt" ]]; then
+  echo "[ORB3] Extracting the ORB vocabulary ..."
+  tar -xf "$ROOT/Vocabulary/ORBvoc.txt.tar.gz" -C "$ROOT/Vocabulary"
 fi
 
+# Build the selectable modes before showing the interactive menus.
+cmake -S "$ROOT" -B "$ROOT/build" -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 "${OPENCV_ARGS[@]}"
+BUILD_TARGETS=(stereo_inertial_euroc)
+if [[ -z "$ARG" ]]; then
+  BUILD_TARGETS=("${MODE_TARGETS[@]}")
+fi
+cmake --build "$ROOT/build" --target "${BUILD_TARGETS[@]}" --parallel "${ORB3_JOBS:-2}"
+
+if [[ -z "$ARG" ]]; then
+  choose_option 'How would you like to run ORB-SLAM3?' "${MODE_LABELS[@]}"
+  MODE_INDEX="$MENU_CHOICE"
+  NEED_RIGHT=0
+  NEED_IMU=0
+  case "$MODE_INDEX" in
+    1) NEED_RIGHT=1 ;;
+    2) NEED_IMU=1 ;;
+    3) NEED_RIGHT=1; NEED_IMU=1 ;;
+  esac
+  discover_datasets
+  if (( ${#DATASET_NAMES[@]} == 0 )); then
+    printf '\nNo compatible EuRoC datasets found in %s for %s.\n' "$DATASETS" "${MODE_LABELS[$MODE_INDEX]}" >&2
+    exit 1
+  fi
+  printf '\nSelected mode: %s\nDataset directory: %s\n' "${MODE_LABELS[$MODE_INDEX]}" "$DATASETS"
+  choose_option 'Which dataset would you like to use?' "${DATASET_NAMES[@]}"
+  ARG="${DATASET_PATHS[$MENU_CHOICE]}"
+fi
+
+BIN="$ROOT/Examples/${MODE_DIRS[$MODE_INDEX]}/${MODE_TARGETS[$MODE_INDEX]}"
+SETTINGS="$ROOT/Examples/${MODE_DIRS[$MODE_INDEX]}/EuRoC.yaml"
 if [[ ! -x "$BIN" ]]; then
   echo "ERROR: Compiled executable not found: $BIN" >&2
   exit 1
 fi
 
-if [[ ! -d "$SEQ/mav0/cam0/data" || ! -d "$SEQ/mav0/cam1/data" || ! -f "$SEQ/mav0/imu0/data.csv" ]]; then
+if [[ -d "$ARG" ]]; then
+  SEQ="$(cd -- "$ARG" && pwd)"
+  NAME="${SEQ##*/}"
+  BAG=""
+  if find_bag "$SEQ" "$NAME"; then
+    BAG="$FOUND_BAG"
+  fi
+elif [[ -f "$ARG" && "$ARG" == *.bag ]]; then
+  BAG="$(cd -- "$(dirname -- "$ARG")" && pwd)/$(basename -- "$ARG")"
+  NAME="${BAG##*/}"
+  NAME="${NAME%.bag}"
+  if [[ "$(basename -- "$(dirname -- "$BAG")")" == "$NAME" ]]; then
+    SEQ="$(dirname -- "$BAG")"
+  else
+    SEQ="$DATASETS/$NAME"
+  fi
+else
+  NAME="$(basename -- "$ARG")"
+  NAME="${NAME%.bag}"
+  SEQ="$DATASETS/$NAME"
+  BAG=""
+  if find_bag "$SEQ" "$NAME"; then
+    BAG="$FOUND_BAG"
+  fi
+fi
+
+if ! dataset_ready "$SEQ"; then
   if [[ -z "$BAG" || ! -f "$BAG" ]]; then
     echo "ERROR: Dataset $NAME is not available in ASL format, and $BAG was not found." >&2
     echo "Place the ROS1 .bag file in $DATASETS or provide an EuRoC ASL directory." >&2
     exit 1
   fi
   echo "[ORB3] Found ROS1 dataset: $BAG"
-  echo "[ORB3] The official format requires PNG images and an IMU CSV file. Extracting the required data once."
+  echo "[ORB3] Extracting the camera images and sensor data required for the selected mode."
   echo "[ORB3] Available disk space: $(df -h "$DATASETS" | awk 'NR==2 {print $4}')"
 
   VENV="$ROOT/.orb3_venv"
@@ -159,7 +224,7 @@ if [[ ! -d "$SEQ/mav0/cam0/data" || ! -d "$SEQ/mav0/cam1/data" || ! -f "$SEQ/mav
     "$VENV/bin/python" -m pip install rosbags
   fi
 
-  "$VENV/bin/python" - "$BAG" "$SEQ" <<'PYTHON'
+  "$VENV/bin/python" - "$BAG" "$SEQ" "$NEED_RIGHT" "$NEED_IMU" <<'PYTHON'
 from pathlib import Path
 import csv
 import struct
@@ -169,6 +234,8 @@ from rosbags.highlevel import AnyReader
 
 bag = Path(sys.argv[1])
 seq = Path(sys.argv[2])
+need_right, need_imu = sys.argv[3] == '1', sys.argv[4] == '1'
+required = {'cam0'} | ({'cam1'} if need_right else set()) | ({'imu0'} if need_imu else set())
 leftdir = seq / 'mav0' / 'cam0' / 'data'
 rightdir = seq / 'mav0' / 'cam1' / 'data'
 imucsv = seq / 'mav0' / 'imu0' / 'data.csv'
@@ -199,8 +266,7 @@ def write_mono8_png(path, msg):
         raise RuntimeError(f'Invalid image: {width}x{height}, step={step}')
     # 8-bit grayscale PNG with a zero filter byte at the start of each scanline.
     scanlines = b''.join(b'\x00' + bytes(raw[row * step:row * step + width]) for row in range(height))
-    png = (b'\x89PNG\r\n\x1a\n' + png_chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 0, 0, 0, 0))
-           + png_chunk(b'IDAT', zlib.compress(scanlines, 3)) + png_chunk(b'IEND', b''))
+    png = b'\x89PNG\r\n\x1a\n' + png_chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 0, 0, 0, 0)) + png_chunk(b'IDAT', zlib.compress(scanlines, 3)) + png_chunk(b'IEND', b'')
     tmp = path.with_suffix('.png.tmp')
     tmp.write_bytes(png)
     tmp.replace(path)
@@ -220,22 +286,19 @@ left, right = set(), set()
 counts = dict(cam0=0, cam1=0, imu0=0)
 imu_tmp = imucsv.with_suffix('.csv.tmp')
 with AnyReader([bag]) as reader:
-    connections = [c for c in reader.connections if topic_kind(c.topic)]
+    connections = [c for c in reader.connections if topic_kind(c.topic) in required]
     print('[ORB3] Relevant topics:', [c.topic for c in connections], flush=True)
-    if not {'cam0', 'cam1', 'imu0'}.issubset({topic_kind(c.topic) for c in connections}):
-        raise RuntimeError('The bag is missing one or more required topics: cam0, cam1, imu0')
+    if not required.issubset({topic_kind(c.topic) for c in connections}):
+        raise RuntimeError(f'The bag is missing required topics: {sorted(required)}')
     with imu_tmp.open('w', newline='') as handle:
         writer = csv.writer(handle)
-        writer.writerow(['#timestamp [ns]', 'w_RS_S_x [rad s^-1]', 'w_RS_S_y [rad s^-1]',
-                         'w_RS_S_z [rad s^-1]', 'a_RS_S_x [m s^-2]', 'a_RS_S_y [m s^-2]', 'a_RS_S_z [m s^-2]'])
+        writer.writerow(['#timestamp [ns]', 'w_RS_S_x [rad s^-1]', 'w_RS_S_y [rad s^-1]', 'w_RS_S_z [rad s^-1]', 'a_RS_S_x [m s^-2]', 'a_RS_S_y [m s^-2]', 'a_RS_S_z [m s^-2]'])
         for connection, bagstamp, rawdata in reader.messages(connections=connections):
             kind = topic_kind(connection.topic)
             msg = reader.deserialize(rawdata, connection.msgtype)
             timestamp = ns_stamp(msg.header)
             if kind == 'imu0':
-                writer.writerow([timestamp, msg.angular_velocity.x, msg.angular_velocity.y,
-                                 msg.angular_velocity.z, msg.linear_acceleration.x,
-                                 msg.linear_acceleration.y, msg.linear_acceleration.z])
+                writer.writerow([timestamp, msg.angular_velocity.x, msg.angular_velocity.y, msg.angular_velocity.z, msg.linear_acceleration.x, msg.linear_acceleration.y, msg.linear_acceleration.z])
             else:
                 image_dir = leftdir if kind == 'cam0' else rightdir
                 image_file = image_dir / f'{timestamp}.png'
@@ -244,46 +307,48 @@ with AnyReader([bag]) as reader:
                 (left if kind == 'cam0' else right).add(timestamp)
             counts[kind] += 1
             if counts['cam0'] and counts['cam0'] % 500 == 0 and kind == 'cam0':
-                print(f"[ORB3] Extraction progress: {counts['cam0']} potential stereo pairs, {counts['imu0']} IMU measurements", flush=True)
+                print(f"[ORB3] Extraction progress: {counts['cam0']} camera frames, {counts['imu0']} IMU measurements", flush=True)
 
-paired = sorted(left & right)
-if len(paired) < 50 or counts['imu0'] < 100:
-    raise RuntimeError(f'Insufficient data: {len(paired)} stereo pairs, {counts["imu0"]} IMU measurements')
-(seq / '.orb3_timestamps.txt').write_text(''.join(f'{ts}\n' for ts in paired))
-imu_tmp.replace(imucsv)
-(seq / '.orb3_extracted.done').write_text(f'{len(paired)} stereo / {counts["imu0"]} imu\n')
-print(f'[ORB3] Done: {len(paired)} stereo pairs and {counts["imu0"]} IMU measurements', flush=True)
+paired = sorted(left & right if need_right else left)
+if len(paired) < 50 or (need_imu and counts['imu0'] < 100):
+    raise RuntimeError(f'Insufficient data: {len(paired)} camera frames, {counts["imu0"]} IMU measurements')
+(seq / ('.orb3_timestamps.txt' if need_right else '.orb3_timestamps_mono.txt')).write_text(''.join(f'{ts}\n' for ts in paired))
+if need_imu:
+    imu_tmp.replace(imucsv)
+else:
+    imu_tmp.unlink(missing_ok=True)
+(seq / '.orb3_extracted.done').write_text(f'{len(paired)} frames / {counts["imu0"]} imu\n')
+print(f'[ORB3] Done: {len(paired)} camera frames and {counts["imu0"]} IMU measurements', flush=True)
 PYTHON
 fi
 
 # Store timestamps in a separate file without modifying the official EuRoC files.
 TIMES="$SEQ/.orb3_timestamps.txt"
+if (( ! NEED_RIGHT )); then
+  TIMES="$SEQ/.orb3_timestamps_mono.txt"
+fi
 if [[ ! -s "$TIMES" ]]; then
-  python3 - "$SEQ" "$TIMES" <<'PYTHON'
+  python3 - "$SEQ" "$TIMES" "$NEED_RIGHT" <<'PYTHON'
 from pathlib import Path
 import sys
 seq, times = Path(sys.argv[1]), Path(sys.argv[2])
+need_right = sys.argv[3] == '1'
 left = {f.stem for f in (seq / 'mav0/cam0/data').glob('*.png')}
 right = {f.stem for f in (seq / 'mav0/cam1/data').glob('*.png')}
-paired = sorted(left & right, key=int)
+paired = sorted(left & right if need_right else left, key=int)
 if not paired:
-    sys.exit('ERROR: No stereo pairs with matching timestamps were found.')
+    sys.exit('ERROR: No camera images with suitable timestamps were found.')
 times.write_text(''.join(x + '\n' for x in paired))
-print(f'[ORB3] {len(paired)} stereo pairs. Timestamps: {times}')
+print(f'[ORB3] {len(paired)} camera frames. Timestamps: {times}')
 PYTHON
 fi
 
 OUT="$ROOT/outputs/$NAME"
+if (( MODE_INDEX != 3 )); then
+  OUT="$OUT/${MODE_TARGETS[$MODE_INDEX]}"
+fi
 mkdir -p "$OUT"
 export LD_LIBRARY_PATH="$ROOT/lib:$ROOT/Thirdparty/DBoW2/lib:$ROOT/Thirdparty/g2o/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-# A local Pangolin installation may contain multiple pango_*.so libraries
-# in different subdirectories. Add all their directories to the library search path.
-if [[ -n "${PANGO_BUILD:-}" && -d "$PANGO_BUILD" ]]; then
-  while IFS= read -r lib_dir; do
-    export LD_LIBRARY_PATH="$lib_dir:$LD_LIBRARY_PATH"
-  done < <(find "$PANGO_BUILD" -type f -name '*.so*' -printf '%h\n' | sort -u)
-fi
-
 # Prefer the sequence's body ground truth, then the matching bundled EuRoC IMU GT.
 if [[ -z "${ORB3_GT+x}" && ! -f "$SEQ/mav0/state_groundtruth_estimate0/data.csv" ]]; then
   case "$NAME" in
@@ -292,11 +357,9 @@ if [[ -z "${ORB3_GT+x}" && ! -f "$SEQ/mav0/state_groundtruth_estimate0/data.csv"
     V2_*) export ORB3_GT="$ROOT/evaluation/Ground_truth/EuRoC_imu/V2_GT.txt" ;;
   esac
 fi
-
+echo "[ORB3] Mode: ${MODE_LABELS[$MODE_INDEX]} | OpenCV Viz viewer: ${ORB3_VIEWER:-1} (0=disabled, 1=enabled)"
 echo "[ORB3] Dataset: $NAME"
-echo "[ORB3] Data path: $SEQ"
 echo "[ORB3] Output directory: $OUT"
-echo "[ORB3] Mode: STEREO + IMU | Pangolin viewer: ${ORB3_VIEWER:-1} (0=disabled, 1=enabled)"
 echo "[ORB3] Starting processing. Stop with Ctrl+C"
 cd "$OUT"
-exec "$BIN" "$ROOT/Vocabulary/ORBvoc.txt" "$ROOT/Examples/Stereo-Inertial/EuRoC.yaml" "$SEQ" "$TIMES"
+exec "$BIN" "$ROOT/Vocabulary/ORBvoc.txt" "$SETTINGS" "$SEQ" "$TIMES"

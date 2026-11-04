@@ -6,6 +6,9 @@ In this document we list all the pieces of code included  by ORB-SLAM3 and linke
 
 #####Code in **src** and **include** folders
 
+* *VizMouseNavigation.cc*.
+Mouse navigation mathematics includes MIT-licensed code, Copyright (c) 2013 Steven Lovegrove. The full copyright and license notice is retained in the source.
+
 * *ORBextractor.cc*.
 This is a modified version of orb.cpp of OpenCV library. The original code is BSD licensed.
 
@@ -34,10 +37,10 @@ This is a modified version of [Sophus](https://github.com/strasdat/Sophus). [MIT
 
 #####Library dependencies 
 
-* **Pangolin (visualization and user interface)**.
-[MIT license](https://en.wikipedia.org/wiki/MIT_License).
+* **VTK (3D visualization through OpenCV Viz)**.
+BSD license.
 
-* **OpenCV**.
+* **OpenCV, including the contrib viz module**.
 BSD license.
 
 * **Eigen3**.

@@ -31,7 +31,7 @@
 #include<System.h>
 #include "ImuTypes.h"
 #include "Optimizer.h"
-#include "LiveGroundTruth.h"
+#include "../LiveMonitor.h"
 
 using namespace std;
 
@@ -40,19 +40,7 @@ void LoadImages(const string &strPathLeft, const string &strPathRight, const str
 
 void LoadIMU(const string &strImuPath, vector<double> &vTimeStamps, vector<cv::Point3f> &vAcc, vector<cv::Point3f> &vGyro);
 
-void PrintEvaluation(const orb3_live::GroundTruth::Result& error, const char* label)
-{
-    std::cout << std::fixed << std::setprecision(3) << label;
-    if (error.valid())
-    {
-        if (error.positionValid) std::cout << " PositionError=" << error.positionError << "m";
-        else std::cout << " PositionError=N/A";
-        std::cout << " | ATE_RMSE=" << error.rmse << "m";
-    }
-    else
-        std::cout << " PositionError=N/A | ATE_RMSE=N/A | Reason=" << error.status;
-    std::cout << " | Samples=" << error.samples << std::endl;
-}
+using orb3_live::PrintEvaluation;
 
 
 int main(int argc, char **argv)
@@ -225,82 +213,7 @@ int main(int argc, char **argv)
             double ttrack= std::chrono::duration_cast<std::chrono::duration<double> >(t2 - t1).count();
 
             vTimesTrack[ni]=ttrack;
-            const double elapsedTime = tframe - vTimestampsCam[seq][0];
-            Sophus::SE3f Twb;
-            unsigned long mapId = 0, originId = 0;
-            bool imuInitialized = false;
-            const bool bodyTracked = SLAM.GetCurrentBodyPose(Twb, mapId, originId, imuInitialized);
-
-            if (ni == 0 || elapsedTime - lastMonitorTime >= 1.0)
-            {
-                lastMonitorTime = elapsedTime;
-                orb3_live::GroundTruth::Result error;
-                if (imuInitialized)
-                {
-                    error = evaluation.evaluate(SLAM.GetOptimizedBodyTrajectory(),
-                                                vTimestampsCam[seq].front(), tframe);
-                    if (!bodyTracked) error.positionValid = false;
-                }
-                else error.status = bodyTracked ? "WAIT_IMU" : "WAIT_TRACKING";
-
-                const int trackingState = SLAM.GetTrackingState();
-                const std::vector<ORB_SLAM3::MapPoint*> trackedPoints = SLAM.GetTrackedMapPoints();
-                const size_t trackedCount = std::count_if(trackedPoints.begin(), trackedPoints.end(), [](ORB_SLAM3::MapPoint* point) {
-                    return point != nullptr;
-                });
-
-                std::string stateName = "UNKNOWN";
-                if (trackingState == 1) stateName = "INITIALIZING";
-                else if (trackingState == 2) stateName = "OK";
-                else if (trackingState == 3) stateName = "RECENTLY_LOST";
-                else if (trackingState == 4) stateName = "LOST";
-                else if (trackingState == 5) stateName = "OK_KLT";
-
-                const double windowStart = tframe - 1.0;
-                const auto camBegin = std::lower_bound(vTimestampsCam[seq].cbegin(), vTimestampsCam[seq].cend(), windowStart);
-                const auto camEnd = std::upper_bound(vTimestampsCam[seq].cbegin(), vTimestampsCam[seq].cend(), tframe);
-                const auto imuBegin = std::lower_bound(vTimestampsImu[seq].cbegin(), vTimestampsImu[seq].cend(), windowStart);
-                const auto imuEnd = std::upper_bound(vTimestampsImu[seq].cbegin(), vTimestampsImu[seq].cend(), tframe);
-
-                const auto calculateHz = [](std::vector<double>::const_iterator begin, std::vector<double>::const_iterator end) -> double {
-                    const auto count = std::distance(begin, end);
-                    if (count < 2) return 0.0;
-                    const double duration = *(end - 1) - *begin;
-                    return duration > 0.0 ? static_cast<double>(count - 1) / duration : 0.0;
-                };
-
-                const double camHz = calculateHz(camBegin, camEnd);
-                const double imuHz = calculateHz(imuBegin, imuEnd);
-
-                std::cout << std::fixed << std::setprecision(3);
-                std::cout << "[ORB3 LIVE] t=" << elapsedTime << "s";
-                std::cout << " | State=" << stateName;
-                std::cout << " | TrackedMP=" << trackedCount;
-                std::cout << " | IMU_Samples=" << vImuMeas.size();
-                std::cout << " | Processing=" << ttrack * 1000.0 << "ms" << std::endl;
-
-                if (bodyTracked && imuInitialized)
-                {
-                    const Eigen::Vector3f position = Twb.translation();
-                    const Eigen::Quaternionf orientation = Twb.unit_quaternion();
-
-                    std::cout << "[ORB3 LIVE] p_BinW=(" << position.x() << "," << position.y() << "," << position.z() << ")m";
-                    std::cout << std::setprecision(1);
-                    std::cout << " | CAM0=" << camHz << "Hz | CAM1=" << camHz << "Hz | IMU=" << imuHz << "Hz" << std::endl;
-                    std::cout << std::setprecision(3);
-                    std::cout << "[ORB3 LIVE] q_BtoW_xyzw=(" << orientation.x() << "," << orientation.y() << "," << orientation.z() << "," << orientation.w() << ")" << std::endl;
-                }
-                else
-                {
-                    std::cout << std::setprecision(1);
-                    std::cout << "[ORB3 LIVE] Position=N/A";
-                    std::cout << " | CAM0=" << camHz << "Hz | CAM1=" << camHz << "Hz | IMU=" << imuHz << "Hz" << std::endl;
-                    std::cout << std::setprecision(3);
-                }
-
-                PrintEvaluation(error, "[ORB3 EVAL]");
-                std::cout << std::endl;
-            }
+            orb3_live::PrintMonitor(SLAM, evaluation, vTimestampsCam[seq], vTimestampsImu[seq], tframe, ttrack, vImuMeas.size(), ni == 0, true, lastMonitorTime);
 
             // Wait to load the next frame
             double T=0;

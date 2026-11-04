@@ -18,7 +18,12 @@
 
 
 #include "Viewer.h"
-#include <pangolin/pangolin.h>
+#include "VizViewerControls.h"
+#include "VizEventPump.h"
+#include "VizViewerProfile.h"
+#include <opencv2/viz.hpp>
+#include <algorithm>
+#include <chrono>
 
 #include <mutex>
 
@@ -161,225 +166,106 @@ bool Viewer::ParseViewerParamFile(cv::FileStorage &fSettings)
 
 void Viewer::Run()
 {
-    mbFinished = false;
-    mbStopped = false;
-
-    pangolin::CreateWindowAndBind("ORB-SLAM3: Map Viewer",1024,768);
-
-    // 3D Mouse handler requires depth testing to be enabled
-    glEnable(GL_DEPTH_TEST);
-
-    // Issue specific OpenGl we might need
-    glEnable (GL_BLEND);
-    glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-    pangolin::CreatePanel("menu").SetBounds(0.0,1.0,0.0,pangolin::Attach::Pix(175));
-    pangolin::Var<bool> menuFollowCamera("menu.Follow Camera",false,true);
-    pangolin::Var<bool> menuCamView("menu.Camera View",false,false);
-    pangolin::Var<bool> menuTopView("menu.Top View",false,false);
-    // pangolin::Var<bool> menuSideView("menu.Side View",false,false);
-    pangolin::Var<bool> menuShowPoints("menu.Show Points",true,true);
-    pangolin::Var<bool> menuShowKeyFrames("menu.Show KeyFrames",true,true);
-    pangolin::Var<bool> menuShowGraph("menu.Show Graph",false,true);
-    pangolin::Var<bool> menuShowInertialGraph("menu.Show Inertial Graph",true,true);
-    pangolin::Var<bool> menuLocalizationMode("menu.Localization Mode",false,true);
-    pangolin::Var<bool> menuReset("menu.Reset",false,false);
-    pangolin::Var<bool> menuStop("menu.Stop",false,false);
-    pangolin::Var<bool> menuStepByStep("menu.Step By Step",false,true);  // false, true
-    pangolin::Var<bool> menuStep("menu.Step",false,false);
-
-    pangolin::Var<bool> menuShowOptLba("menu.Show LBA opt", false, true);
-    // Define Camera Render Object (for view / scene browsing)
-    pangolin::OpenGlRenderState s_cam(
-                pangolin::ProjectionMatrix(1024,768,mViewpointF,mViewpointF,512,389,0.1,1000),
-                pangolin::ModelViewLookAt(mViewpointX,mViewpointY,mViewpointZ, 0,0,0,0.0,-1.0, 0.0)
-                );
-
-    // Add named OpenGL viewport to window and provide 3D Handler
-    pangolin::View& d_cam = pangolin::CreateDisplay()
-            .SetBounds(0.0, 1.0, pangolin::Attach::Pix(175), 1.0, -1024.0f/768.0f)
-            .SetHandler(new pangolin::Handler3D(s_cam));
-
-    pangolin::OpenGlMatrix Twc, Twr;
-    Twc.SetIdentity();
-    pangolin::OpenGlMatrix Ow; // Oriented with g in the z axis
-    Ow.SetIdentity();
-    cv::namedWindow("ORB-SLAM3: Current Frame");
-
-    bool bFollow = true;
-    bool bLocalizationMode = false;
-    bool bStepByStep = false;
-    bool bCameraView = true;
-
-    if(mpTracker->mSensor == mpSystem->MONOCULAR || mpTracker->mSensor == mpSystem->STEREO || mpTracker->mSensor == mpSystem->RGBD)
     {
-        menuShowGraph = true;
+        std::unique_lock<std::mutex> lock(mMutexFinish);
+        mbFinished = false;
+    }
+    {
+        std::unique_lock<std::mutex> lock(mMutexStop);
+        mbStopped = false;
     }
 
-    float trackedImageScale = mpTracker->GetImageScale();
-
-    cout << "Starting the Viewer" << endl;
-    while(1)
+    const std::string frameWindow = "ORB-SLAM3: Current Frame";
+    try
     {
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-        mpMapDrawer->GetCurrentOpenGLCameraMatrix(Twc,Ow);
-
-        if(mbStopTrack)
+        cv::viz::Viz3d window("ORB-SLAM3: Map Viewer");
+        window.setWindowSize(cv::Size(1024, 768));
+        window.setBackgroundColor(cv::viz::Color::white());
+        cv::viz::Camera initialCamera(mViewpointF, mViewpointF, 512, 389, cv::Size(1024, 768));
+        initialCamera.setClip(cv::Vec2d(0.1, 1000));
+        // Fix the projection/clip planes once; navigation changes only the pose.
+        bool projectionInitialized = false;
+        // Viz uses camera +Y down: y_dir=+Y reproduces the original viewer's world up=(0,-1,0).
+        const cv::Affine3d initialPose = cv::viz::makeCameraPose(cv::Vec3d(mViewpointX, mViewpointY, mViewpointZ), cv::Vec3d(0, 0, 0), cv::Vec3d(0, 1, 0));
+        VizViewerControls controls(initialPose);
+        window.registerKeyboardCallback(VizViewerControls::KeyboardCallback, &controls);
+        controls.UpdateHint(window);
+        cv::namedWindow(frameWindow);
+        const float trackedImageScale = mpTracker->GetImageScale();
+        cout << "Starting the OpenCV Viz Viewer (R: initial view, T: follow from TOP)" << endl;
+        VizViewerProfile profile("loop", {"map", "image", "viz", "highgui", "total"});
+        bool gravityAligned = false;
+        while(!CheckFinish() && !window.wasStopped())
         {
-            menuStepByStep = true;
-            mbStopTrack = false;
-        }
-
-        if(menuFollowCamera && bFollow)
-        {
-            if(bCameraView)
-                s_cam.Follow(Twc);
-            else
-                s_cam.Follow(Ow);
-        }
-        else if(menuFollowCamera && !bFollow)
-        {
-            if(bCameraView)
+            const auto frameStart = std::chrono::steady_clock::now();
+            // Reset/ResetActiveMap waits for this acknowledgement before clearing maps.
+            Stop();
+            const auto mapBegin = VizViewerProfile::Clock::now();
+            auto mapEnd = mapBegin;
+            if(!isStopped())
             {
-                s_cam.SetProjectionMatrix(pangolin::ProjectionMatrix(1024,768,mViewpointF,mViewpointF,512,389,0.1,1000));
-                s_cam.SetModelViewMatrix(pangolin::ModelViewLookAt(mViewpointX,mViewpointY,mViewpointZ, 0,0,0,0.0,-1.0, 0.0));
-                s_cam.Follow(Twc);
+                mpMapDrawer->UpdateViewer(window, true);
+                mapEnd = VizViewerProfile::Clock::now();
+                cv::Mat toShow;
+                cv::Mat im = mpFrameDrawer->DrawFrame(trackedImageScale);
+                if(both)
+                {
+                    cv::Mat imRight = mpFrameDrawer->DrawRightFrame(trackedImageScale);
+                    if(imRight.rows != im.rows)
+                        cv::resize(imRight, imRight, cv::Size(imRight.cols * im.rows / imRight.rows, im.rows));
+                    cv::hconcat(im, imRight, toShow);
+                }
+                else
+                    toShow = im;
+                const float displayScale = both ? std::min(mImageViewerScale, 1000.f / toShow.cols) : mImageViewerScale;
+                if(displayScale != 1.f)
+                {
+                    const int width = std::max(1, static_cast<int>(toShow.cols * displayScale));
+                    const int height = std::max(1, static_cast<int>(toShow.rows * displayScale));
+                    cv::resize(toShow, toShow, cv::Size(width, height), 0, 0, displayScale < 1.f ? cv::INTER_AREA : cv::INTER_LINEAR);
+                }
+                cv::imshow(frameWindow, toShow);
             }
-            else
+
+            // Keep both event loops alive, including while SLAM has paused the viewer.
+            const auto imageEnd = VizViewerProfile::Clock::now();
+            if(!ProcessVizEvents(window, "viewer/top_hint", VizViewerControls::MouseCallback, &controls))
+                break;
+            const auto vizEnd = VizViewerProfile::Clock::now();
+            const double elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - frameStart).count();
+            const int key = cv::waitKey(std::max(1, static_cast<int>(mT - elapsed)));
+            if(key == 'r' || key == 'R')
+                controls.RequestReset();
+            else if(key == 't' || key == 'T')
+                controls.RequestTopView();
+            if(window.wasStopped() || cv::getWindowProperty(frameWindow, cv::WND_PROP_VISIBLE) < 1)
+                break;
+            // Initialize the native projection after Viz has created its window.
+            if(!projectionInitialized)
             {
-                s_cam.SetProjectionMatrix(pangolin::ProjectionMatrix(1024,768,3000,3000,512,389,0.1,1000));
-                s_cam.SetModelViewMatrix(pangolin::ModelViewLookAt(0,0.01,10, 0,0,0,0.0,0.0, 1.0));
-                s_cam.Follow(Ow);
+                SetVizCameraProjection(window, "viewer/top_hint", initialCamera);
+                projectionInitialized = true;
             }
-            bFollow = true;
-        }
-        else if(!menuFollowCamera && bFollow)
-        {
-            bFollow = false;
-        }
-
-        if(menuCamView)
-        {
-            menuCamView = false;
-            bCameraView = true;
-            s_cam.SetProjectionMatrix(pangolin::ProjectionMatrix(1024,768,mViewpointF,mViewpointF,512,389,0.1,10000));
-            s_cam.SetModelViewMatrix(pangolin::ModelViewLookAt(mViewpointX,mViewpointY,mViewpointZ, 0,0,0,0.0,-1.0, 0.0));
-            s_cam.Follow(Twc);
-        }
-
-        if(menuTopView && mpMapDrawer->mpAtlas->isImuInitialized())
-        {
-            menuTopView = false;
-            bCameraView = false;
-            s_cam.SetProjectionMatrix(pangolin::ProjectionMatrix(1024,768,3000,3000,512,389,0.1,10000));
-            s_cam.SetModelViewMatrix(pangolin::ModelViewLookAt(0,0.01,50, 0,0,0,0.0,0.0, 1.0));
-            s_cam.Follow(Ow);
-        }
-
-        if(menuLocalizationMode && !bLocalizationMode)
-        {
-            mpSystem->ActivateLocalizationMode();
-            bLocalizationMode = true;
-        }
-        else if(!menuLocalizationMode && bLocalizationMode)
-        {
-            mpSystem->DeactivateLocalizationMode();
-            bLocalizationMode = false;
-        }
-
-        if(menuStepByStep && !bStepByStep)
-        {
-            //cout << "Viewer: step by step" << endl;
-            mpTracker->SetStepByStep(true);
-            bStepByStep = true;
-        }
-        else if(!menuStepByStep && bStepByStep)
-        {
-            mpTracker->SetStepByStep(false);
-            bStepByStep = false;
-        }
-
-        if(menuStep)
-        {
-            mpTracker->mbStep = true;
-            menuStep = false;
-        }
-
-
-        d_cam.Activate(s_cam);
-        glClearColor(1.0f,1.0f,1.0f,1.0f);
-        mpMapDrawer->DrawCurrentCamera(Twc);
-        if(menuShowKeyFrames || menuShowGraph || menuShowInertialGraph || menuShowOptLba)
-            mpMapDrawer->DrawKeyFrames(menuShowKeyFrames,menuShowGraph, menuShowInertialGraph, menuShowOptLba);
-        if(menuShowPoints)
-            mpMapDrawer->DrawMapPoints();
-
-        pangolin::FinishFrame();
-
-        cv::Mat toShow;
-        cv::Mat im = mpFrameDrawer->DrawFrame(trackedImageScale);
-
-        if(both){
-            cv::Mat imRight = mpFrameDrawer->DrawRightFrame(trackedImageScale);
-            cv::hconcat(im,imRight,toShow);
-        }
-        else{
-            toShow = im;
-        }
-
-        if(mImageViewerScale != 1.f)
-        {
-            int width = toShow.cols * mImageViewerScale;
-            int height = toShow.rows * mImageViewerScale;
-            cv::resize(toShow, toShow, cv::Size(width, height));
-        }
-
-        cv::imshow("ORB-SLAM3: Current Frame",toShow);
-        cv::waitKey(mT);
-
-        if(menuReset)
-        {
-            menuShowGraph = true;
-            menuShowInertialGraph = true;
-            menuShowKeyFrames = true;
-            menuShowPoints = true;
-            menuLocalizationMode = false;
-            if(bLocalizationMode)
-                mpSystem->DeactivateLocalizationMode();
-            bLocalizationMode = false;
-            bFollow = true;
-            menuFollowCamera = true;
-            mpSystem->ResetActiveMap();
-            menuReset = false;
-        }
-
-        if(menuStop)
-        {
-            if(bLocalizationMode)
-                mpSystem->DeactivateLocalizationMode();
-
-            // Stop all threads
-            mpSystem->Shutdown();
-
-            // Save camera trajectory
-            mpSystem->SaveTrajectoryEuRoC("CameraTrajectory.txt");
-            mpSystem->SaveKeyFrameTrajectoryEuRoC("KeyFrameTrajectory.txt");
-            menuStop = false;
-        }
-
-        if(Stop())
-        {
-            while(isStopped())
+            // VTK handles R in OnChar too, AFTER the keyboard callback. Defer our
+            // reset until both event pumps finish so its default cannot override us.
+            if(controls.IsTopFollowing() && !isStopped())
             {
-                usleep(3000);
+                Map* activeMap = nullptr;
+                std::vector<Map*> maps;
+                mpMapDrawer->mpAtlas->GetViewerMaps(activeMap, maps);
+                gravityAligned = activeMap && activeMap->isImuInitialized();
             }
+            controls.ApplyView(window, mpMapDrawer->GetCurrentCameraPose(), gravityAligned);
+            const auto loopEnd = VizViewerProfile::Clock::now();
+            profile.Add({VizViewerProfile::Milliseconds(mapBegin, mapEnd), VizViewerProfile::Milliseconds(mapEnd, imageEnd), VizViewerProfile::Milliseconds(imageEnd, vizEnd), VizViewerProfile::Milliseconds(vizEnd, loopEnd), VizViewerProfile::Milliseconds(frameStart, loopEnd)});
         }
-
-        if(CheckFinish())
-            break;
+        window.close();
+        cv::destroyWindow(frameWindow);
     }
-
+    catch(const std::exception &error)
+    {
+        std::cerr << "OpenCV Viz viewer stopped: " << error.what() << std::endl;
+    }
     SetFinish();
 }
 
@@ -397,7 +283,9 @@ bool Viewer::CheckFinish()
 
 void Viewer::SetFinish()
 {
-    unique_lock<mutex> lock(mMutexFinish);
+    unique_lock<mutex> stopLock(mMutexStop);
+    unique_lock<mutex> finishLock(mMutexFinish);
+    mbStopped = true;
     mbFinished = true;
 }
 
@@ -441,7 +329,9 @@ bool Viewer::Stop()
 void Viewer::Release()
 {
     unique_lock<mutex> lock(mMutexStop);
-    mbStopped = false;
+    unique_lock<mutex> finishLock(mMutexFinish);
+    if(!mbFinished)
+        mbStopped = false;
 }
 
 /*void Viewer::SetTrackingPause()
